@@ -15,6 +15,15 @@ Vec2 NDCtoPixels(Vec2 v)
 	float newy = ((v.y / 2.0) + 0.5) * HEIGHT;
 	return {newx, newy};
 }
+Vec3 PixelToNDC(int x, int y)
+{
+	float xf = (float)x;
+	float yf = (float)y;
+	const float width = (float)WIDTH;
+	const float height = (float)HEIGHT;
+	Vec3 pixel_NDC = Vec3(2 * xf / width - 1.0f, 2 * yf / height - 1.0f, 0.0);
+	return pixel_NDC;
+}
 
 IntColor color_buffer[HEIGHT][WIDTH];
 float depth_buffer[HEIGHT][WIDTH];
@@ -35,7 +44,28 @@ const float height = (float)(HEIGHT);
 const bool do_backface_culling = true;
 const Vec3 view_dir_cam_space = Vec3(0, 0, -1.0);
 
-void fill_tri(int i, Vec3 v1, Vec3 v2, Vec3 v3)
+struct tri_info
+{
+	bool inside;
+	float area;
+	float w1;
+	float w2;
+	float w3;
+};
+
+inline tri_info insideTri(const Vec3 v1, const Vec3 v2, const Vec3 v3, const Vec3 pixel_NDC)
+{
+	float area = edgeFunction(v1, v2, v3);
+	float w1 = edgeFunction(v2, v3, pixel_NDC) / area;
+	float w2 = edgeFunction(v3, v1, pixel_NDC) / area;
+	float w3 = edgeFunction(v1, v2, pixel_NDC) / area;
+	bool inside = (w1 >= 0) && (w2 >= 0) && (w3 >= 0);
+	return {inside, area, w1, w2, w3};
+}
+
+
+
+void fill_tri_tiled(int i, Vec3 v1, Vec3 v2, Vec3 v3)
 {
 
 	// pre-compute 1 over z
@@ -52,9 +82,8 @@ void fill_tri(int i, Vec3 v1, Vec3 v2, Vec3 v3)
 	int maxx = (int)min(bb_pixel.max.x + 1, WIDTH);
 	int maxy = (int)min(bb_pixel.max.y + 1, HEIGHT);
 
-
 	// We don't interpolate vertex attributes, we're filling only one tri at a time -> all this stuff is constant
-	Vec3 world_normal = normals[i]; 
+	Vec3 world_normal = normals[i];
 	float amt = world_normal.Dot(light_dir);
 
 	Material mat = materials[faces[i].matID];
@@ -62,35 +91,108 @@ void fill_tri(int i, Vec3 v1, Vec3 v2, Vec3 v3)
 
 	Vec3 amb = {mat.diffuse.r * ambient_contrib, mat.diffuse.g * ambient_contrib, mat.diffuse.b * ambient_contrib};
 	Vec3 dif = {mat.diffuse.r * diff_contrib, mat.diffuse.g * diff_contrib, mat.diffuse.b * diff_contrib};
-	
-
-	// Iterate through pixels
-	for (int y = miny; y < maxy; y++)
+#define BLOCK_SIZE 8
+	for (int y = miny; y < maxy; y += BLOCK_SIZE)
 	{
-		for (int x = minx; x < maxx; x++)
+		for (int x = minx; x < maxx; x += BLOCK_SIZE)
 		{
-			float xf = (float)x + .5; // middle of pixel
-			float yf = (float)y + .5; // middle of pixel
 
-			Vec3 pixel_NDC = Vec3(2 * xf / width - 1.0f, 2 * yf / height - 1.0f, 0.0);
-
-			float area = edgeFunction(v1, v2, v3);
-			float w1 = edgeFunction(v2, v3, pixel_NDC) / area;
-			float w2 = edgeFunction(v3, v1, pixel_NDC) / area;
-			float w3 = edgeFunction(v1, v2, pixel_NDC) / area;
-			bool inside = (w1 >= 0) && (w2 >= 0) && (w3 >= 0);
-			if (inside)
+			if (!(maxy - y < BLOCK_SIZE || maxx - x < BLOCK_SIZE))
 			{
+				// we have a full tile to work with
+				tri_info TL_info = insideTri(v1, v2, v3, PixelToNDC(x, y));
+				tri_info TR_info = insideTri(v1, v2, v3, PixelToNDC(x + BLOCK_SIZE - 1, y));
+				tri_info BL_info = insideTri(v1, v2, v3, PixelToNDC(x, y + BLOCK_SIZE - 1));
+				tri_info BR_info = insideTri(v1, v2, v3, PixelToNDC(x + BLOCK_SIZE - 1, y + BLOCK_SIZE - 1));
+				float TL_depth = 1 / (TL_info.w1 * v1.z + TL_info.w2 * v2.z + TL_info.w3 * v3.z);
+				float TR_depth = 1 / (TR_info.w1 * v1.z + TR_info.w2 * v2.z + TR_info.w3 * v3.z);
+				float BL_depth = 1 / (BL_info.w1 * v1.z + BL_info.w2 * v2.z + BL_info.w3 * v3.z);
+				float BR_depth = 1 / (BR_info.w1 * v1.z + BR_info.w2 * v2.z + BR_info.w3 * v3.z);
 
-				float depth = 1 / (w1 * v1.z + w2 * v2.z + w3 * v3.z);
+				if (TL_info.inside && TR_info.inside && BL_info.inside && BR_info.inside)
+				{
+					// Best Outcome - everything in the tri
+					for (int dy = 0; dy < BLOCK_SIZE; dy++)
+					{
+						for (int dx = 0; dx < BLOCK_SIZE; dx++)
+						{
+							float dxf = (float)dx / (float)BLOCK_SIZE;
+							float dyf = (float)dy / (float)BLOCK_SIZE;
+							float top_depth = TL_depth * dxf + TR_depth * (1 - dxf);
+							float bot_depth = BL_depth * dxf + BR_depth * (1 - dxf);
+							float depth = top_depth * dyf + bot_depth * (1 - dyf);
+							if (depth < depth_buffer[y + dy][x + dx])
+							{
+								color_buffer[y + dy][x + dx] = Vec3ToColor(amb + dif).toIntColor();
+								// color_buffer[y + dy][x + dx] = {0, 255, 0, 255};
+								depth_buffer[y + dy][x + dx] = depth;
+							}
+						}
+					}
+				}
+			}
+
+			// Either too small a block or not all were in - gotta go through the old fashioned way
+			for (int dy = 0; dy < BLOCK_SIZE; dy++)
+			{
+				for (int dx = 0; dx < BLOCK_SIZE; dx++)
+				{
+					tri_info ti = insideTri(v1, v2, v3, PixelToNDC(x + dx, y + dy));
+					if (ti.inside)
+					{
+						float depth = 1 / (ti.w1 * v1.z + ti.w2 * v2.z + ti.w3 * v3.z);
+						if (depth > near && depth < far && depth < depth_buffer[y + dy][x + dx])
+						{
+							color_buffer[y + dy][x + dx] = Vec3ToColor(amb + dif).toIntColor(); // Vec3ToColor({fabs(world_normal.x), fabs(world_normal.y), fabs(world_normal.z)}); //
+							depth_buffer[y + dy][x + dx] = depth;
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+inline void fill_tri(int i, Vec3 v1, Vec3 v2, Vec3 v3)
+{
+
+	// pre-compute 1 over z
+	v1.z = 1 / v1.z;
+	v2.z = 1 / v2.z;
+	v3.z = 1 / v3.z;
+
+	Rect bb = bounding_box2d(v1.toVec2(), v2.toVec2(), v3.toVec2());
+	Rect bb_pixel = {.min = NDCtoPixels(bb.min), .max = NDCtoPixels(bb.max)};
+
+	// indices into buffer that determine the bounding box
+	int minx = (int)max(0, bb_pixel.min.x - 1);
+	int miny = (int)max(0, bb_pixel.min.y - 1);
+	int maxx = (int)min(bb_pixel.max.x + 1, WIDTH);
+	int maxy = (int)min(bb_pixel.max.y + 1, HEIGHT);
+
+	// We don't interpolate vertex attributes, we're filling only one tri at a time -> all this stuff is constant
+	Vec3 world_normal = normals[i];
+	float amt = world_normal.Dot(light_dir);
+
+	Material mat = materials[faces[i].matID];
+	float diff_contrib = amt * (1.0 - ambient_contrib);
+
+	Vec3 amb = {mat.diffuse.r * ambient_contrib, mat.diffuse.g * ambient_contrib, mat.diffuse.b * ambient_contrib};
+	Vec3 dif = {mat.diffuse.r * diff_contrib, mat.diffuse.g * diff_contrib, mat.diffuse.b * diff_contrib};
+
+	for (int y = miny; y < maxy; y += 1)
+	{
+		for (int x = minx; x < maxx; x += 1)
+		{
+
+			tri_info ti = insideTri(v1, v2, v3, PixelToNDC(x, y));
+			if (ti.inside)
+			{
+				float depth = 1 / (ti.w1 * v1.z + ti.w2 * v2.z + ti.w3 * v3.z);
 				if (depth > near && depth < far && depth < depth_buffer[y][x])
 				{
 					color_buffer[y][x] = Vec3ToColor(amb + dif).toIntColor(); // Vec3ToColor({fabs(world_normal.x), fabs(world_normal.y), fabs(world_normal.z)}); //
 					depth_buffer[y][x] = depth;
-
-					// uncomment to render the depth
-					// float depth_col = depth / (10);
-					// color_buffer[y][x] = Vec3ToColor({depth_col, depth_col, depth_col});
 				}
 			}
 		}
@@ -163,7 +265,8 @@ void render()
 			}
 		}
 
-		fill_tri(i, v1, v2, v3);
+		//fill_tri_tiled(i, v1, v2, v3); // 53ms
+		fill_tri(i, v1, v2, v3); // 40ms 30ms when inlined
 	}
 }
 
@@ -196,5 +299,5 @@ int main()
 	auto duration = duration_cast<milliseconds>(end - start);
 	std::cerr << "Finished Rendering in " << duration.count() << "ms" << std::endl;
 	std::cerr << "Outputting" << color_buffer[0][1].r << std::endl;
-	// output_to_stdout();
+	output_to_stdout();
 }
