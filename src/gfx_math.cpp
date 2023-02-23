@@ -6,7 +6,7 @@ Vec2 Vec3::toVec2()
 	return {x, y};
 }
 
-Vec4 Vec3::toVec4(float w)
+Vec4 const Vec3::toVec4(const float w) const
 {
 	return {x, y, z, w};
 }
@@ -16,42 +16,59 @@ float Vec3::length()
 	return sqrt(x * x + y * y + z * z);
 }
 
-Vec3 Vec3::Sub(Vec3 b)
+Vec3 Vec3::operator-(Vec3 b)
 {
 	return {x - b.x, y - b.y, z - b.z};
 }
+Vec3 Vec3::operator+(Vec3 b)
+{
+	return {x + b.x, y + b.y, z + b.z};
+}
 
-Vec3 Vec3::Div(float s)
+Vec3 Vec3::operator/(float s)
 {
 	return {x / s, y / s, z / s};
 }
-
-Vec3 Vec3::Cross(Vec3 b)
+Vec3 Vec3::operator*(float s)
 {
-	float x2 = y * b.z - z * b.y;
-	float y2 = z * b.x - x * b.z;
-	float z2 = x * b.y - y * b.x;
-	return {x2, y2, z2};
+	return {x * s, y * s, z * s};
 }
+
+Vec3 Vec3::RotateY(float radians) const
+{
+	float nx = cos(radians) * x - sin(radians) * z;
+	float nz = sin(radians) * x + cos(radians) * z;
+	return {nx, y, nz};
+}
+Vec3 Vec3::RotateZ(float radians) const
+{
+	float ny = cos(radians) * y - sin(radians) * z;
+	float nz = sin(radians) * y + cos(radians) * z;
+	return {x, ny, nz};
+}
+
+
+
+
+
 Vec3 Vec3::Normalize()
 {
-	return Div(length());
+	return (*this) /length();
+}
+
+float Vec3::Dot(const Vec3 b) const
+{
+	return x * b.x + y * b.y + z * b.z;
+}
+
+Vec3 const Vec4::toVec3()
+{
+	return {x, y, z};
 }
 
 std::ostream &operator<<(std::ostream &os, const Vec3 m)
 {
 	os << "(" << m.x << ", " << m.y << ", " << m.z << ")";
-	return os;
-}
-
-Vec3 Vec4::toVec3()
-{
-	return {x, y, z};
-}
-
-std::ostream &operator<<(std::ostream &os, const Vec4 m)
-{
-	os << "(" << m.x << ", " << m.y << ", " << m.z << ", " << m.w << ")";
 	return os;
 }
 
@@ -63,7 +80,7 @@ Vec3 Mat4::Mul4xV3(Vec3 v)
 	return {x, y, z};
 }
 
-Vec4 Mat4::Mul4xV4(Vec4 v)
+Vec4 Mat4::Mul4xV4(const Vec4 v) const
 {
 	float x = X00 * v.x + X01 * v.y + X02 * v.z + X03 * v.w;
 	float y = X10 * v.x + X11 * v.y + X12 * v.z + X13 * v.w;
@@ -72,7 +89,7 @@ Vec4 Mat4::Mul4xV4(Vec4 v)
 	return {x, y, z, w};
 }
 
-Mat4 Mat4::Mul4x4(Mat4 b)
+Mat4 Mat4::Mul4x4(const Mat4 b) const
 {
 	Mat4 m;
 	m.X00 = X00 * b.X00 + X01 * b.X10 + X02 * b.X20 + X03 * b.X30;
@@ -93,45 +110,83 @@ Mat4 Mat4::Mul4x4(Mat4 b)
 	m.X33 = X30 * b.X03 + X31 * b.X13 + X32 * b.X23 + X33 * b.X33;
 	return m;
 }
-
+Mat4 Mat4::operator*(const Mat4 other) const
+{
+	return Mul4x4(other);
+}
 std::ostream &operator<<(std::ostream &os, const Mat4 &m)
 {
 	os << "[" << m.X00 << "\t" << m.X01 << "\t" << m.X02 << "\t" << m.X03 << "]" << std::endl;
 	os << "[" << m.X10 << "\t" << m.X11 << "\t" << m.X12 << "\t" << m.X13 << "]" << std::endl;
 	os << "[" << m.X20 << "\t" << m.X21 << "\t" << m.X22 << "\t" << m.X23 << "]" << std::endl;
-	os << "[" <<  m.X30 << "\t" << m.X31 << "\t" << m.X32 << "\t" << m.X33 << "]" << std::endl;
+	os << "[" << m.X30 << "\t" << m.X31 << "\t" << m.X32 << "\t" << m.X33 << "]" << std::endl;
 	return os;
 }
 
 Mat4 Mat4Identity()
 {
+	// clang-format off
 	return {
-		1,
-		0,
-		0,
-		0,
-		0,
-		1,
-		0,
-		0,
-		0,
-		0,
-		1,
-		0,
-		0,
-		0,
-		0,
-		1,
+		1,0,0,0,
+		0,1,0,0,
+		0,0,1,0,
+		0,0,0,1,
 	};
+	// clang-format on
 }
 
-Mat4 Translate3D(Vec3 v)
+Mat4 Translate3D(const Vec3 v)
 {
+	// clang-format off
 	return {
 		1, 0, 0, v.x,
 		0, 1, 0, v.y,
 		0, 0, 1, v.z,
 		0, 0, 0, 1};
+	// clang-format on
+}
+
+Mat4 RotateX(const float rad)
+{
+	float c = cos(rad);
+	float s = sin(rad);
+
+	// clang-format off
+	return {
+		1, 0,  0, 0,
+		0, c, -s, 0,
+		0, s,  c, 0,
+		0, 0,  0, 1,
+	};
+	// clang-format on
+}
+
+Mat4 RotateY(const float rad)
+{
+	float c = cos(rad);
+	float s = sin(rad);
+
+	// clang-format off
+	return {
+		c, 0, -s, 0,
+		0, 1,  0, 0,
+		s, 0,  c, 0,
+		0, 0,  0, 1,
+	};
+	// clang-format on
+}
+Mat4 RotateZ(const float rad)
+{
+	float c = cos(rad);
+	float s = sin(rad);
+	// clang-format off
+	return {
+		c, -s, 0, 0,
+		s,  c, 0, 0,
+		0,  0, 1, 0,
+		0,  0, 0, 1,
+	};
+	// clang-format on
 }
 
 float min(float a, float b)
@@ -157,12 +212,15 @@ float max(float a, float b)
 	}
 }
 
-float clamp(float v, float min, float max){
-	if (v<min){
+float clamp(float v, float min, float max)
+{
+	if (v < min)
+	{
 		return min;
-	} else if (v>max){
+	}
+	else if (v > max)
+	{
 		return max;
-	} 
-		return v;
-
+	}
+	return v;
 }

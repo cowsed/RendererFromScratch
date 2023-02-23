@@ -9,7 +9,7 @@ import (
 )
 
 type vec3 struct {
-	x, y, z float32
+	x, y, z float64
 }
 
 func (v vec3) Sub(o vec3) vec3 {
@@ -59,18 +59,18 @@ func add_material(name string) {
 }
 func ColorToV3(c math32.Color) vec3 {
 	return vec3{
-		x: c.R,
-		y: c.G,
-		z: c.B,
+		x: float64(c.R),
+		y: float64(c.G),
+		z: float64(c.B),
 	}
 }
 
 func TriNormal(v1, v2, v3 vec3) vec3 {
 	var A vec3 = v2.Sub(v1)
 	var B vec3 = v3.Sub(v1)
-	var Nx float32 = A.y*B.z - A.z*B.y
-	var Ny float32 = A.z*B.x - A.x*B.z
-	var Nz float32 = A.x*B.y - A.y*B.x
+	var Nx float64 = A.y*B.z - A.z*B.y
+	var Ny float64 = A.z*B.x - A.x*B.z
+	var Nz float64 = A.x*B.y - A.y*B.x
 	return vec3{Nx, Ny, Nz}
 }
 
@@ -83,7 +83,7 @@ var defualt_material = material{
 
 func main() {
 
-	mod, err := obj.Decode("Models/monkey.obj", "Models/monkey.mtl")
+	mod, err := obj.Decode("Models/cheese_puff.obj", "Models/cheese_puff.mtl")
 	if err != nil {
 		panic(err)
 	}
@@ -107,13 +107,15 @@ func main() {
 	// Decode vertices
 	for i := 0; i < len(mod.Vertices); i += 3 {
 		verts[i/3] = vec3{
-			x: mod_vs[i],
-			y: mod_vs[i+1],
-			z: mod_vs[i+2],
+			x: float64(mod_vs[i]),
+			y: float64(mod_vs[i+1]),
+			z: float64(mod_vs[i+2]),
 		}
 	}
 
 	faces = make([]face, len(mod.Objects[0].Faces))
+	fmt.Printf("Taking %d of %d objects\n", 1, len(mod.Objects))
+	fmt.Printf("%d normals, %d faces %d verts\n", mod.Normals.Size(), len(mod.Objects[0].Faces), mod.Vertices.Len())
 	// Decode Faces
 	for i := 0; i < len(mod.Objects[0].Faces); i++ {
 		face := mod.Objects[0].Faces[i]
