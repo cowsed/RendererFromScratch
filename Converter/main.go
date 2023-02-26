@@ -83,7 +83,7 @@ var defualt_material = material{
 
 func main() {
 
-	mod, err := obj.Decode("Models/cheese_puff.obj", "Models/cheese_puff.mtl")
+	mod, err := obj.Decode("Models/cylinder.obj", "Models/cylinder.mtl")
 	if err != nil {
 		panic(err)
 	}

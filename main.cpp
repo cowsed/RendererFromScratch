@@ -5,66 +5,53 @@
 #include "gfx.h"
 #include "model.h"
 
-#define WIDTH (2 * 240)
+#define WIDTH (1 * 240)
 #define HEIGHT (1 * 240)
-
-// transforms from [-1, 1] to [0, Width]
-Vec2 NDCtoPixels(Vec2 v)
-{
-	float newx = ((v.x / 2.0) + 0.5) * WIDTH;
-	float newy = ((v.y / 2.0) + 0.5) * HEIGHT;
-	return {newx, newy};
-}
-Vec3 PixelToNDC(int x, int y)
-{
-	float xf = (float)x;
-	float yf = (float)y;
-	const float width = (float)WIDTH;
-	const float height = (float)HEIGHT;
-	Vec3 pixel_NDC = Vec3(2 * xf / width - 1.0f, 2 * yf / height - 1.0f, 0.0);
-	return pixel_NDC;
-}
-
-IntColor color_buffer[HEIGHT][WIDTH];
-float depth_buffer[HEIGHT][WIDTH];
-Color clear_color = {1.0, 1.0, 1.0};
-
-inline float edgeFunction(const Vec3 &a, const Vec3 &b, const Vec3 &c)
-{
-	return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
-}
+const float width = (float)(WIDTH);
+const float height = (float)(HEIGHT);
 
 const float ambient_contrib = 0.6;
 const Vec3 light_dir = Vec3({1, 1, -1}).Normalize();
 const float fov = 2.0; // in no units in particular. higher is 'more zoomed in'
 const float near = 1.0;
 const float far = 100.0;
-const float width = (float)(WIDTH);
-const float height = (float)(HEIGHT);
-const bool do_backface_culling = true;
+const bool do_backface_culling = false;
 const Vec3 view_dir_cam_space = Vec3(0, 0, -1.0);
+const bool DB = false;
 
-struct tri_info
+// transforms from [-1, 1] to [0, Width]
+Vec2 NDCtoPixels(const Vec2 &v)
 {
-	bool inside;
-	float area;
-	float w1;
-	float w2;
-	float w3;
-};
-
-inline tri_info insideTri(const Vec3 v1, const Vec3 v2, const Vec3 v3, const Vec3 pixel_NDC)
+	float newx = ((v.x / 2.0) + 0.5) * WIDTH;
+	float newy = ((v.y / 2.0) + 0.5) * HEIGHT;
+	return {newx, newy};
+}
+Vec3 NDCtoPixels3(const Vec3 &v)
 {
-	float area = edgeFunction(v1, v2, v3);
-	float w1 = edgeFunction(v2, v3, pixel_NDC) / area;
-	float w2 = edgeFunction(v3, v1, pixel_NDC) / area;
-	float w3 = edgeFunction(v1, v2, pixel_NDC) / area;
-	bool inside = (w1 >= 0) && (w2 >= 0) && (w3 >= 0);
-	return {inside, area, w1, w2, w3};
+	float newx = ((v.x / 2.0) + 0.5) * WIDTH;
+	float newy = ((v.y / 2.0) + 0.5) * HEIGHT;
+	return {newx, newy, v.z};
+}
+// pixel coordinates [0, WIDTH), [0, HEIGHT) to NDC [-1, 1], [-1, 1]
+Vec3 PixelToNDC(const int x, const int y)
+{
+	const float xf = (float)x;
+	const float yf = (float)y;
+	Vec3 pixel_NDC = Vec3(2 * xf / width - 1.0f, 2 * yf / height - 1.0f, 0.0);
+	return pixel_NDC;
 }
 
+uint32_t color_buffer1[HEIGHT][WIDTH];
+float depth_buffer1[HEIGHT][WIDTH];
 
+uint32_t color_buffer2[HEIGHT][WIDTH];
+float depth_buffer2[HEIGHT][WIDTH];
 
+const Color clear_color = {1.0, 1.0, 1.0};
+int pixels_checked = 0;
+int pixels_filled = 0;
+
+/*
 void fill_tri_tiled(int i, Vec3 v1, Vec3 v2, Vec3 v3)
 {
 
@@ -152,8 +139,8 @@ void fill_tri_tiled(int i, Vec3 v1, Vec3 v2, Vec3 v3)
 		}
 	}
 }
-
-inline void fill_tri(int i, Vec3 v1, Vec3 v2, Vec3 v3)
+*/
+inline void fill_tri(int i, Vec3 v1, Vec3 v2, Vec3 v3, uint32_t color_buf[HEIGHT][WIDTH], float depth_buf[HEIGHT][WIDTH])
 {
 
 	// pre-compute 1 over z
@@ -161,57 +148,254 @@ inline void fill_tri(int i, Vec3 v1, Vec3 v2, Vec3 v3)
 	v2.z = 1 / v2.z;
 	v3.z = 1 / v3.z;
 
-	Rect bb = bounding_box2d(v1.toVec2(), v2.toVec2(), v3.toVec2());
-	Rect bb_pixel = {.min = NDCtoPixels(bb.min), .max = NDCtoPixels(bb.max)};
+	const Rect bb = bounding_box2d(v1.toVec2(), v2.toVec2(), v3.toVec2());
+	const Rect bb_pixel = {.min = NDCtoPixels(bb.min), .max = NDCtoPixels(bb.max)};
 
 	// indices into buffer that determine the bounding box
-	int minx = (int)max(0, bb_pixel.min.x - 1);
-	int miny = (int)max(0, bb_pixel.min.y - 1);
-	int maxx = (int)min(bb_pixel.max.x + 1, WIDTH);
-	int maxy = (int)min(bb_pixel.max.y + 1, HEIGHT);
+	const int minx = (int)max(0, bb_pixel.min.x - 1);
+	const int miny = (int)max(0, bb_pixel.min.y - 1);
+	const int maxx = (int)min(bb_pixel.max.x + 1, WIDTH);
+	const int maxy = (int)min(bb_pixel.max.y + 1, HEIGHT);
 
 	// We don't interpolate vertex attributes, we're filling only one tri at a time -> all this stuff is constant
-	Vec3 world_normal = normals[i];
-	float amt = world_normal.Dot(light_dir);
+	const Vec3 world_normal = normals[i];
+	const float amt = world_normal.Dot(light_dir);
 
-	Material mat = materials[faces[i].matID];
-	float diff_contrib = amt * (1.0 - ambient_contrib);
+	const Material mat = materials[faces[i].matID];
+	const float diff_contrib = amt * (1.0 - ambient_contrib);
 
-	Vec3 amb = {mat.diffuse.r * ambient_contrib, mat.diffuse.g * ambient_contrib, mat.diffuse.b * ambient_contrib};
-	Vec3 dif = {mat.diffuse.r * diff_contrib, mat.diffuse.g * diff_contrib, mat.diffuse.b * diff_contrib};
+	const Vec3 amb = mat.diffuse.toVec3() * ambient_contrib; //{mat.diffuse.r * ambient_contrib, mat.diffuse.g * ambient_contrib, mat.diffuse.b * ambient_contrib};
+	const Vec3 dif = mat.diffuse.toVec3() * diff_contrib;
 
 	for (int y = miny; y < maxy; y += 1)
 	{
 		for (int x = minx; x < maxx; x += 1)
 		{
-
-			tri_info ti = insideTri(v1, v2, v3, PixelToNDC(x, y));
+			pixels_checked++;
+			const tri_info ti = insideTri(v1, v2, v3, PixelToNDC(x, y));
 			if (ti.inside)
 			{
+				pixels_filled++;
+
 				float depth = 1 / (ti.w1 * v1.z + ti.w2 * v2.z + ti.w3 * v3.z);
-				if (depth > near && depth < far && depth < depth_buffer[y][x])
+				if (depth > near && depth < far && depth < depth_buf[y][x])
 				{
-					color_buffer[y][x] = Vec3ToColor(amb + dif).toIntColor(); // Vec3ToColor({fabs(world_normal.x), fabs(world_normal.y), fabs(world_normal.z)}); //
-					depth_buffer[y][x] = depth;
+
+					color_buf[y][x] = Vec3ToColor(amb + dif).toIntColor(); // Vec3ToColor({fabs(world_normal.x), fabs(world_normal.y), fabs(world_normal.z)}); //
+					depth_buf[y][x] = depth;
 				}
 			}
 		}
 	}
 }
 
-void render()
+inline void fill_tri_trishaped(int i, Vec3 ov1, Vec3 ov2, Vec3 ov3, uint32_t color_buf[HEIGHT][WIDTH], float depth_buf[HEIGHT][WIDTH])
 {
 
-	// Clear all pixels
-	for (int y = 0; y < HEIGHT; y++)
+	// pre-compute 1 over z
+	ov1.z = 1 / ov1.z;
+	ov2.z = 1 / ov2.z;
+	ov3.z = 1 / ov3.z;
+
+	// We don't interpolate vertex attributes, we're filling only one tri at a time -> all this stuff is constant
+	const Vec3 world_normal = normals[i];
+	const float amt = world_normal.Dot(light_dir);
+
+	const Material mat = materials[faces[i].matID];
+	const float diff_contrib = amt * (1.0 - ambient_contrib);
+
+	const Vec3 amb = mat.diffuse.toVec3() * ambient_contrib; //{mat.diffuse.r * ambient_contrib, mat.diffuse.g * ambient_contrib, mat.diffuse.b * ambient_contrib};
+	const Vec3 dif = mat.diffuse.toVec3() * diff_contrib;
+
+	// Sort by y
+	Vec3 top;
+	Vec3 mid;
+	Vec3 low;
+
+	// original vector less than other vector
+	bool ov1_lt_ov2 = ov1.y < ov2.y;
+	bool ov1_lt_ov3 = ov1.y < ov3.y;
+	bool ov2_lt_ov1 = ov2.y < ov1.y;
+	bool ov2_lt_ov3 = ov2.y < ov3.y;
+	bool ov3_lt_ov1 = ov3.y < ov1.y;
+	bool ov3_lt_ov2 = ov3.y < ov2.y;
+
+	// cursed if tree
+	if (ov1_lt_ov2 && ov1_lt_ov3)
 	{
-		for (int x = 0; x < WIDTH; x++)
+		top = ov1;
+		if (ov2_lt_ov3)
 		{
-			color_buffer[y][x] = clear_color.toIntColor();
-			depth_buffer[y][x] = far + 1;
+			mid = ov2;
+			low = ov3;
+		}
+		else
+		{
+			mid = ov3;
+			low = ov2;
+		}
+	}
+	else if (ov2_lt_ov1 && ov2_lt_ov3)
+	{
+		top = ov2;
+		if (ov1_lt_ov3)
+		{
+			mid = ov1;
+			low = ov3;
+		}
+		else
+		{
+			mid = ov3;
+			low = ov1;
+		}
+	}
+	else
+	{
+		top = ov3;
+		if (ov1_lt_ov2)
+		{
+			mid = ov1;
+			low = ov2;
+		}
+		else
+		{
+			mid = ov2;
+			low = ov1;
 		}
 	}
 
+	top = NDCtoPixels3(top);
+	mid = NDCtoPixels3(mid);
+	low = NDCtoPixels3(low);
+
+	Vec3 left;
+	Vec3 right;
+	if (mid.x < low.x)
+	{
+		left = mid;
+		right = low;
+	}
+	else
+	{
+		left = low;
+		right = mid;
+	}
+	// at this point top, mid, low, left, right are in pixels
+
+	int miny = (int)(top.y + .5); // to indices that would contain these point
+	int midy = (int)(mid.y + .5); // to indices that would contain these point
+	int maxy = (int)(low.y + .5); // to indices that would contain these point
+
+	// top to mid
+	Vec3 top_to_left = (left - top);
+	Vec3 top_to_right = (right - top);
+
+	float ldx = top_to_left.x / top_to_left.y; // never will divide by 0 fingers crossed - actually will but for iteration will never happen. this may still cause an error though
+	float rdx = top_to_right.x / top_to_right.y;
+	// std::cerr << "ov1:" << ov1 << " ov2:" << ov2 << " ov3: " << ov3 << std::endl;
+	// std::cerr << "top:" << top << " mid:" << mid << " low: " << low << std::endl;
+	// std::cerr << "top to left=" << top_to_left << " top to right=" << top_to_right << std::endl;
+
+	Vec2 lpos = top.toVec2();
+	Vec2 rpos = top.toVec2();
+	for (int y = miny; y < midy; y++)
+	{
+		int left_index = (int)(lpos.x + .5);
+		int right_index = (int)(rpos.x + .5);
+		for (int x = left_index; x <= right_index; x++)
+		{
+			const tri_info ti = insideTri(ov1, ov2, ov3, PixelToNDC(x, y));
+			if (ti.inside)
+			{
+				pixels_filled++;
+
+				float depth = 1 / (ti.w1 * ov1.z + ti.w2 * ov2.z + ti.w3 * ov3.z);
+				if (depth > near && depth < far && depth < depth_buf[y][x])
+				{
+
+					color_buf[y][x] = Vec3ToColor(amb + dif).toIntColor(); // Vec3ToColor({fabs(world_normal.x), fabs(world_normal.y), fabs(world_normal.z)}); //
+					depth_buf[y][x] = depth;
+					if (DB)
+					{
+						color_buf[y][x] = 0xFF0000FF;
+					}
+				}
+			}
+		}
+		lpos.x += ldx;
+		lpos.y += 1;
+		rpos.x += rdx;
+		rpos.y += 1;
+	}
+	// mid to bottom
+	if (mid.x < top.x)
+	{
+		left = mid;
+		right = top;
+	}
+	else
+	{
+		left = top;
+		right = mid;
+	}
+
+	Vec3 right_to_low = (low - right);
+	Vec3 left_to_low = (low - left);
+
+	lpos = left.toVec2();
+	rpos = right.toVec2();
+
+	ldx = left_to_low.x / left_to_low.y; // never will divide by 0 fingers crossed - actually will but for iteration will never happen. this may still cause an error though
+	rdx = right_to_low.x / right_to_low.y;
+
+	for (int y = midy; y < maxy; y++)
+	{
+		int left_index = (int)(lpos.x + .5);
+		int right_index = (int)(rpos.x + .5);
+		for (int x = left_index; x <= right_index; x++)
+		{
+			const tri_info ti = insideTri(ov1, ov2, ov3, PixelToNDC(x, y));
+			if (ti.inside)
+			{
+				pixels_filled++;
+
+				float depth = 1 / (ti.w1 * ov1.z + ti.w2 * ov2.z + ti.w3 * ov3.z);
+				if (depth > near && depth < far && depth < depth_buf[y][x])
+				{
+
+					color_buf[y][x] = Vec3ToColor(amb + dif).toIntColor(); // Vec3ToColor({fabs(world_normal.x), fabs(world_normal.y), fabs(world_normal.z)}); //
+					if (DB)
+					{
+						color_buf[y][x] = 0xFF0000FF;
+					}
+					depth_buf[y][x] = depth;
+				}
+			}
+		}
+		lpos.x += ldx;
+		lpos.y += 1;
+		rpos.x += rdx;
+		rpos.y += 1;
+	}
+}
+
+/*
+const tri_info ti = insideTri(v1, v2, v3, PixelToNDC(x, y));
+if (ti.inside)
+{
+pixels_filled++;
+
+float depth = 1 / (ti.w1 * v1.z + ti.w2 * v2.z + ti.w3 * v3.z);
+if (depth > near && depth < far && depth < depth_buf[y][x])
+{
+
+color_buf[y][x] = Vec3ToColor(amb + dif).toIntColor(); // Vec3ToColor({fabs(world_normal.x), fabs(world_normal.y), fabs(world_normal.z)}); //
+depth_buf[y][x] = depth;
+}
+}*/
+
+void precalculate()
+{
 	// Precalculate world normals
 	for (int i = 0; i < num_faces; i++)
 	{
@@ -219,16 +403,37 @@ void render()
 		Vec3 world_normal = TriNormal(points[t.v1_index], points[t.v2_index], points[t.v3_index]).Normalize(); // normals[i]; //
 		normals[i] = world_normal;
 	}
+}
+
+void clear_buffers(uint32_t color[HEIGHT][WIDTH], float depth[HEIGHT][WIDTH])
+{
+	// Clear all pixels
+	for (int y = 0; y < HEIGHT; y++)
+	{
+		for (int x = 0; x < WIDTH; x++)
+		{
+			color[y][x] = clear_color.toIntColor();
+			depth[y][x] = far + 1;
+		}
+	}
+}
+
+void render(uint32_t color[HEIGHT][WIDTH], float depth[HEIGHT][WIDTH], double time_seconds)
+{
+	clear_buffers(color, depth);
 
 	// Project all the points to screen space
 	Vec3 projected_points[num_points];
 	Vec3 cam_projected_points[num_points];
 	float aspect = width / height;
 
-	Mat4 trans = Translate3D({0, -2.5, -10});
-	Mat4 rotx = RotateX(1 * M_PI / 14.0);
-	Mat4 roty = RotateY(5 * M_PI / 4.0);
-	Mat4 transform = rotx * (trans * roty);
+	const Mat4 trans = Translate3D({0, 0, -10});
+	const Mat4 rotx = RotateX(0 * M_PI / 14.0);
+	const Mat4 roty = RotateX(1 * M_PI / 4.0);
+	const Mat4 transform = rotx * (trans * roty);
+
+	// std::cerr << "transform:\n"
+	// 		  << transform << std::endl;
 
 	for (int i = 0; i < num_points; i++)
 	{
@@ -250,10 +455,10 @@ void render()
 	// Assemble triangles and color they pixels
 	for (int i = 0; i < num_faces; i++)
 	{
-		Tri t = faces[i];
-		Vec3 v1 = projected_points[t.v1_index];
-		Vec3 v2 = projected_points[t.v2_index];
-		Vec3 v3 = projected_points[t.v3_index];
+		const Tri t = faces[i];
+		const Vec3 v1 = projected_points[t.v1_index];
+		const Vec3 v2 = projected_points[t.v2_index];
+		const Vec3 v3 = projected_points[t.v3_index];
 
 		if (do_backface_culling)
 		{
@@ -265,12 +470,13 @@ void render()
 			}
 		}
 
-		//fill_tri_tiled(i, v1, v2, v3); // 53ms
-		fill_tri(i, v1, v2, v3); // 40ms 30ms when inlined
+		// fill_tri_tiled(i, v1, v2, v3); // 53ms
+		fill_tri_trishaped(i, v1, v2, v3, color, depth); // 40ms 30ms when inlined
+														 // fill_tri(i, v1, v2, v3, color, depth); // 40ms 30ms when inlined
 	}
 }
 
-void output_to_stdout()
+void output_to_stdout(uint32_t color[HEIGHT][WIDTH])
 {
 	std::cout << "P3" << std::endl;
 	std::cout << WIDTH << " " << HEIGHT << std::endl;
@@ -280,9 +486,12 @@ void output_to_stdout()
 	{
 		for (int x = 0; x < WIDTH; x++)
 		{
-			IntColor c = color_buffer[y][x];
+			uint32_t c = color_buffer1[y][x];
+			int r = (c & 0b111111110000000000000000) >> 16;
+			int g = (c & 0b1111111100000000) >> 8;
+			int b = (c & 0b11111111);
 
-			std::cout << (int)c.r << " " << (int)c.g << " " << (int)c.b << " ";
+			std::cout << r << " " << g << " " << b << " ";
 		}
 		std::cout << "\n";
 	}
@@ -290,14 +499,36 @@ void output_to_stdout()
 
 int main()
 {
-
+	const int runs = 1;
 	std::cerr << "Rendering" << std::endl;
+	precalculate();
 	using namespace std::chrono;
 	auto start = high_resolution_clock::now();
-	render();
+
+	float time = 0.0;
+	for (int i = 0; i < runs; i++)
+	{
+		render(color_buffer1, depth_buffer1, time);
+	}
+
 	auto end = high_resolution_clock::now();
 	auto duration = duration_cast<milliseconds>(end - start);
 	std::cerr << "Finished Rendering in " << duration.count() << "ms" << std::endl;
-	std::cerr << "Outputting" << color_buffer[0][1].r << std::endl;
-	output_to_stdout();
+	std::cerr << runs << " runs. " << duration.count() / runs << " ms each" << std::endl;
+	std::cerr << "Outputting" << std::endl;
+	std::cerr << "Checked: " << pixels_checked << ". Filled: " << pixels_filled << std::endl;
+	output_to_stdout(color_buffer1);
 }
+/*
+	bool buffer1 = true;
+	for (int i = 0; i < runs; i++)
+	{
+		if (buffer1)
+		{
+			render(color_buffer1, depth_buffer1);
+		} else {
+			render(color_buffer2, depth_buffer2);
+		}
+		buffer1 = !buffer1;
+	}
+*/

@@ -1,0 +1,7 @@
+Vaguely VEX Brain is takes 10x as long as this computer roughly
+
+order of magnitude more pixels checked than pixels that laid within the triangle when using simple bounding box method
+better algorithm mwould be nice
+- in the works
+
+optimized triangle rasterizer

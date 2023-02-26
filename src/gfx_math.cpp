@@ -6,7 +6,7 @@ Vec2 Vec3::toVec2()
 	return {x, y};
 }
 
-Vec4 const Vec3::toVec4(const float w) const
+Vec4 Vec3::toVec4(const float w) const
 {
 	return {x, y, z, w};
 }
@@ -16,20 +16,20 @@ float Vec3::length()
 	return sqrt(x * x + y * y + z * z);
 }
 
-Vec3 Vec3::operator-(Vec3 b)
+Vec3 Vec3::operator-(const Vec3 b) const
 {
 	return {x - b.x, y - b.y, z - b.z};
 }
-Vec3 Vec3::operator+(Vec3 b)
+Vec3 Vec3::operator+(const Vec3 b) const
 {
 	return {x + b.x, y + b.y, z + b.z};
 }
 
-Vec3 Vec3::operator/(float s)
+Vec3 Vec3::operator/(const float s) const
 {
 	return {x / s, y / s, z / s};
 }
-Vec3 Vec3::operator*(float s)
+Vec3 Vec3::operator*(const float s) const
 {
 	return {x * s, y * s, z * s};
 }

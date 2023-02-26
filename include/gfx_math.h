@@ -28,17 +28,17 @@ struct Vec3
 	Vec2 toVec2();
 	float length();
 
-	Vec3 operator-(Vec3 b);
-	Vec3 operator+(Vec3 b);
-	Vec3 operator/(float s);
-	Vec3 operator*(float s);
+	Vec3 operator-(const Vec3 b) const;
+	Vec3 operator+(const Vec3 b) const;
+	Vec3 operator/(const float s) const;
+	Vec3 operator*(const float s) const;
 
 	Vec3 RotateY(float radians) const;
 	Vec3 RotateZ(float radians) const;
 
 	Vec3 Normalize();
 	float Dot(const Vec3 b) const;
-	Vec4 const toVec4(const float w) const;
+	Vec4 toVec4(const float w) const;
 };
 struct Vec4
 {
