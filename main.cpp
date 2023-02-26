@@ -40,6 +40,11 @@ Vec3 PixelToNDC(const int x, const int y)
 	Vec3 pixel_NDC = Vec3(2 * xf / width - 1.0f, 2 * yf / height - 1.0f, 0.0);
 	return pixel_NDC;
 }
+Vec3 PixelToNDC3(const float xf, const float yf, const float z)
+{
+	Vec3 pixel_NDC = Vec3(2 * xf / width - 1.0f, 2 * yf / height - 1.0f, z);
+	return pixel_NDC;
+}
 
 uint32_t color_buffer1[HEIGHT][WIDTH];
 float depth_buffer1[HEIGHT][WIDTH];
@@ -186,188 +191,6 @@ inline void fill_tri(int i, Vec3 v1, Vec3 v2, Vec3 v3, uint32_t color_buf[HEIGHT
 	}
 }
 
-// xy in pixels, z in depth
-void draw_tri_fast(Vec3 ov1, Vec3 ov2, Vec3 ov3, uint32_t color, uint32_t color_buf[HEIGHT][WIDTH], float depth_buf[HEIGHT][WIDTH])
-{ // Sort by y
-
-	// init - these arent right
-	Vec3 top;
-	Vec3 mid;
-	Vec3 low;
-
-	// original vector less than other vector
-	bool ov1_lt_ov2 = ov1.y <= ov2.y;
-	bool ov1_lt_ov3 = ov1.y <= ov3.y;
-	bool ov2_lt_ov1 = ov2.y <= ov1.y;
-	bool ov2_lt_ov3 = ov2.y <= ov3.y;
-	bool ov3_lt_ov1 = ov3.y <= ov1.y;
-	bool ov3_lt_ov2 = ov3.y <= ov2.y;
-
-	// cursed if tree
-	if (ov1_lt_ov2 && ov1_lt_ov3)
-	{
-		top = ov1;
-		if (ov2_lt_ov3)
-		{
-			mid = ov2;
-			low = ov3;
-		}
-		else
-		{
-			mid = ov3;
-			low = ov2;
-		}
-	}
-	else if (ov2_lt_ov1 && ov2_lt_ov3)
-	{
-		top = ov2;
-		if (ov1_lt_ov3)
-		{
-			mid = ov1;
-			low = ov3;
-		}
-		else
-		{
-			mid = ov3;
-			low = ov1;
-		}
-	}
-	else
-	{
-		top = ov3;
-		if (ov1_lt_ov2)
-		{
-			mid = ov1;
-			low = ov2;
-		}
-		else
-		{
-			mid = ov2;
-			low = ov1;
-		}
-	}
-
-	// init - not right
-	Vec3 left = mid;
-	Vec3 right = low;
-
-	if (mid.x < low.x)
-	{
-		left = mid;
-		right = low;
-	}
-	else
-	{
-		left = low;
-		right = mid;
-	}
-
-	int miny = (int)(top.y + .5); // to indices that would contain these point
-	int midy = (int)(mid.y + .5); // to indices that would contain these point
-	int maxy = (int)(low.y + .5); // to indices that would contain these point - i dont know why this one has to be bigger. but its oerhaps because its miny < midy, midy < maxy :
-
-	// top to mid
-	Vec3 top_to_left = (left - top);
-	Vec3 top_to_right = (right - top);
-
-	float ldx = top_to_left.x / top_to_left.y; // never will divide by 0 fingers crossed - actually will but for iteration will never happen. this may still cause an error though
-	float rdx = top_to_right.x / top_to_right.y;
-
-	Vec3 lpos = top;
-	Vec3 rpos = top;
-
-	for (int y = miny; y < midy; y++)
-	{
-		int left_index = (int)(lpos.x + .5);
-		int right_index = (int)(rpos.x + .5);
-
-		for (int x = left_index; x <= right_index; x++)
-		{
-			const tri_info ti = insideTri(ov1, ov2, ov3, PixelToNDC(x, y));
-			float depth = 1 / (ti.w1 * ov1.z + ti.w2 * ov2.z + ti.w3 * ov3.z);
-
-			if (depth > near && depth < far && depth < depth_buf[y][x])
-			{
-
-				color_buf[y][x] = color; // color;
-				depth_buf[y][x] = depth;
-			}
-		}
-		lpos.x += ldx;
-		lpos.y += 1;
-		rpos.x += rdx;
-		rpos.y += 1;
-	}
-
-	// at y position of mid
-	// lpos is halfway down left side
-	// rpos is halfway down right side
-
-	// mid to bottom
-	if (mid.x < top.x)
-	{
-		if (mid == left)
-		{
-			left = mid;
-			right = rpos;
-		}
-		else
-		{
-			left = lpos;
-			right = mid;
-		}
-	}
-	else
-	{
-		if (mid == right)
-		{
-			left = lpos;
-			right = mid;
-		}
-		else
-		{
-			left = mid;
-			right = rpos;
-		}
-	}
-	// std::cerr << "ldx1: " << ldx << "rdx1: " << rdx << std::endl;
-	// std::cerr << "mid = " << mid << ", top = " << top << std::endl;
-	// std::cerr << "lpos: " << lpos << ", rpos: " << rpos << std::endl;
-
-	Vec3 right_to_low = (low - right);
-	Vec3 left_to_low = (low - left);
-
-	lpos = left;
-	rpos = right;
-
-	ldx = left_to_low.x / left_to_low.y; // never will divide by 0 fingers crossed - actually will but for iteration will never happen. this may still cause an error though
-	rdx = right_to_low.x / right_to_low.y;
-	std::cerr << "ldx2: " << ldx << "rdx2: " << rdx << std::endl;
-
-	for (int y = midy; y <= maxy; y++)
-	{
-		int left_index = (int)(lpos.x + .5);
-		int right_index = (int)(rpos.x + .5);
-		for (int x = left_index; x <= right_index; x++)
-		{
-			const tri_info ti = insideTri(ov1, ov2, ov3, PixelToNDC(x, y));
-			if (ti.inside)
-			{
-				float depth = 1 / (ti.w1 * ov1.z + ti.w2 * ov2.z + ti.w3 * ov3.z);
-				pixels_filled++;
-				if (depth > near && depth < far && depth < depth_buf[y][x])
-				{
-					color_buf[y][x] = color; // color;
-					depth_buf[y][x] = depth;
-				}
-			}
-		}
-		lpos.x += ldx;
-		lpos.y += 1;
-		rpos.x += rdx;
-		rpos.y += 1;
-	}
-}
 int sign(int a)
 {
 	if (a < 0)
@@ -395,7 +218,6 @@ void draw_tri_better(int i, Vec3 ov1, Vec3 ov2, Vec3 ov3, uint32_t color, uint32
 	// cursed if tree
 	if (ov1_lt_ov2 && ov1_lt_ov3)
 	{
-		std::cerr << "ov1 is top" << std::endl;
 		top = ov1;
 		if (ov2_lt_ov3)
 		{
@@ -410,7 +232,6 @@ void draw_tri_better(int i, Vec3 ov1, Vec3 ov2, Vec3 ov3, uint32_t color, uint32
 	}
 	else if (ov2_lt_ov1 && ov2_lt_ov3)
 	{
-		std::cerr << "ov2 is top" << std::endl;
 
 		top = ov2;
 		if (ov1_lt_ov3)
@@ -426,8 +247,6 @@ void draw_tri_better(int i, Vec3 ov1, Vec3 ov2, Vec3 ov3, uint32_t color, uint32
 	}
 	else
 	{
-		std::cerr << "ov3 is top" << std::endl;
-
 		top = ov3;
 		if (ov1_lt_ov2)
 		{
@@ -441,8 +260,6 @@ void draw_tri_better(int i, Vec3 ov1, Vec3 ov2, Vec3 ov3, uint32_t color, uint32
 		}
 	}
 
-	std::cerr << "top = " << top << ", mid = " << mid << ", low = " << low << std::endl;
-
 	int miny = (int)(top.y + .5);
 	int midy = (int)(mid.y + .5);
 	int maxy = (int)(low.y + .5);
@@ -451,43 +268,47 @@ void draw_tri_better(int i, Vec3 ov1, Vec3 ov2, Vec3 ov3, uint32_t color, uint32
 	Vec3 top2low = (low - top);
 	Vec3 mid2low = (mid - low);
 
-	std::cerr << "top2mid = " << top2mid << " top2low = " << top2low << " mid2low = " << mid2low << std::endl;
-
 	float short_side_dx = top2mid.x / top2mid.y;
 	float long_side_dx = top2low.x / top2low.y;
 
 	Vec3 short_side_pos = top;
 	Vec3 long_side_pos = top;
 
-	for (int y = miny; y <= maxy; y++)
+	for (int y = max(0, miny - 1); y <= min(HEIGHT, maxy); y++)
 	{
 		// switch direction when we pass midy
 		if (y == midy)
 		{
 			short_side_dx = mid2low.x / mid2low.y;
-			color = 0xFF0000FF;
 			short_side_pos = mid;
-			std::cerr << "ssp: " << short_side_pos << " lsp: " << long_side_pos << std::endl;
 		}
 		int short_side_index = (int)(short_side_pos.x + .5);
 		int long_side_index = (int)(long_side_pos.x + .5);
 		int direction = sign(long_side_index - short_side_index);
-		int x = short_side_index;
-		// /std::cerr << "ssi = " << short_side_index << " lsi = " << long_side_index << " direction = " << direction << std::endl;
-		while (x != long_side_index)
-		{
-			// std::cerr << "x = " << x << ", y = " << y << std::endl;
-			const tri_info ti = insideTri(ov1, ov2, ov3, PixelToNDC(x, y));
-			float depth = 1 / (ti.w1 * ov1.z + ti.w2 * ov2.z + ti.w3 * ov3.z);
-			// std::cerr << "depth = " << depth << " near = " << near << " far = " << far << " cd = " << depth_buf[y][x] << std::endl;
-			pixels_filled++;
-			if ((depth > near) && (depth < far) && (depth < depth_buf[y][x]))
-			{
-				// std::cerr << "saving" << std::endl;
-				color_buf[y][x] = color; // color;
-				depth_buf[y][x] = depth;
-			}
+		short_side_index -= direction; // extra padding to avoid off by one errors
+		long_side_index += direction;  // extra padding to avoid off by one errors
+		short_side_index = clamp(short_side_index, 0, WIDTH);
+		long_side_index = clamp(long_side_index, 0, WIDTH);
 
+		direction = sign(long_side_index - short_side_index); // necessary sometimes cuz direction can get mess up ? todo figure out why this happens
+
+		int x = short_side_index;
+		while (x != long_side_index + direction && x < WIDTH && x > 0) // + direction to do <= typa thing
+		{
+			Vec3 fov1 = PixelToNDC3(ov1.x, ov1.y, ov1.z);
+			Vec3 fov2 = PixelToNDC3(ov2.x, ov2.y, ov2.z);
+			Vec3 fov3 = PixelToNDC3(ov3.x, ov3.y, ov3.z);
+			const tri_info ti = insideTri(fov1, fov2, fov3, PixelToNDC(x, y));
+			float depth = 1 / (ti.w1 * ov1.z + ti.w2 * ov2.z + ti.w3 * ov3.z);
+			if (ti.inside)
+			{
+				pixels_filled++;
+				if ((depth > near) && (depth < far) && (depth < depth_buf[y][x]))
+				{
+					color_buf[y][x] = color; // color;
+					depth_buf[y][x] = depth;
+				}
+			}
 			x += direction;
 		}
 
@@ -496,7 +317,7 @@ void draw_tri_better(int i, Vec3 ov1, Vec3 ov2, Vec3 ov3, uint32_t color, uint32
 		long_side_pos.x += long_side_dx;
 		long_side_pos.y += 1;
 	}
-	std::cerr << "ssp: " << short_side_pos << " lsp: " << long_side_pos << std::endl;
+	// std::cerr << "ssp: " << short_side_pos << " lsp: " << long_side_pos << std::endl;
 }
 
 inline void fill_tri_trishaped(int i, Vec3 ov1, Vec3 ov2, Vec3 ov3, uint32_t color_buf[HEIGHT][WIDTH], float depth_buf[HEIGHT][WIDTH])
@@ -521,8 +342,6 @@ inline void fill_tri_trishaped(int i, Vec3 ov1, Vec3 ov2, Vec3 ov3, uint32_t col
 	ov1 = NDCtoPixels3(ov1);
 	ov2 = NDCtoPixels3(ov2);
 	ov3 = NDCtoPixels3(ov3);
-
-	std::cerr << "v1 = " << ov1 << ", v2 = " << ov2 << ", v3 = " << ov3 << std::endl;
 
 	draw_tri_better(i, ov1, ov2, ov3, col, color_buf, depth_buf);
 }
@@ -619,9 +438,9 @@ void render(uint32_t color[HEIGHT][WIDTH], float depth[HEIGHT][WIDTH], double ti
 		}
 
 		// fill_tri_tiled(i, v1, v2, v3); // 53ms
-		// fill_tri(i, v1, v2, v3, color, depth);
+		//fill_tri(i, v1, v2, v3, color, depth);
 		fill_tri_trishaped(i, v1, v2, v3, color, depth); // 40ms 30ms when inlined
-														 //  fill_tri(i, v1, v2, v3, color, depth); // 40ms 30ms when inlined
+		//   fill_tri(i, v1, v2, v3, color, depth); // 40ms 30ms when inlined
 	}
 }
 
