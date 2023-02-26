@@ -396,7 +396,7 @@ void render(uint32_t color[HEIGHT][WIDTH], float depth[HEIGHT][WIDTH], double ti
 
 	const Mat4 trans = Translate3D({0, 0, -10});
 	const Mat4 rotx = RotateX(0 * M_PI / 14.0);
-	const Mat4 roty = RotateX(1 * M_PI / 4.0);
+	const Mat4 roty = RotateX(2 * M_PI / 4.0);
 	const Mat4 transform = rotx * (trans * roty);
 
 	// std::cerr << "transform:\n"
@@ -438,8 +438,8 @@ void render(uint32_t color[HEIGHT][WIDTH], float depth[HEIGHT][WIDTH], double ti
 		}
 
 		// fill_tri_tiled(i, v1, v2, v3); // 53ms
-		//fill_tri(i, v1, v2, v3, color, depth);
-		fill_tri_trishaped(i, v1, v2, v3, color, depth); // 40ms 30ms when inlined
+		fill_tri(i, v1, v2, v3, color, depth);
+		//fill_tri_trishaped(i, v1, v2, v3, color, depth); // 40ms 30ms when inlined
 		//   fill_tri(i, v1, v2, v3, color, depth); // 40ms 30ms when inlined
 	}
 }
