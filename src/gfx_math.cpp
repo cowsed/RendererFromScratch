@@ -33,6 +33,10 @@ Vec3 Vec3::operator*(const float s) const
 {
 	return {x * s, y * s, z * s};
 }
+bool Vec3::operator==(const Vec3 b) const{
+	return x == b.x && y ==b.y && z == b.z;
+}
+
 
 Vec3 Vec3::RotateY(float radians) const
 {

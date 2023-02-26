@@ -32,6 +32,7 @@ struct Vec3
 	Vec3 operator+(const Vec3 b) const;
 	Vec3 operator/(const float s) const;
 	Vec3 operator*(const float s) const;
+	bool operator==(const Vec3 b) const;
 
 	Vec3 RotateY(float radians) const;
 	Vec3 RotateZ(float radians) const;
