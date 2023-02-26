@@ -46,7 +46,7 @@ Vec3 PixelToNDC3(const float xf, const float yf, const float z)
 	return pixel_NDC;
 }
 
-uint32_t color_buffer1[HEIGHT][WIDTH];
+uint32_t color_buffer[HEIGHT][WIDTH];
 float depth_buffer1[HEIGHT][WIDTH];
 
 const Color clear_color = {1.0, 1.0, 1.0};
@@ -385,6 +385,18 @@ void clear_buffers(uint32_t color[HEIGHT][WIDTH], float depth[HEIGHT][WIDTH])
 	}
 }
 
+
+struct IVec2{
+	int x;
+	int y;
+	IVec2 operator+(IVec2 o){
+		return {x + o.x, y + o.y};
+	}
+	IVec2 operator-(IVec2 o){
+		return {x - o.x, y - o.y};
+	}
+};
+
 void render(uint32_t color[HEIGHT][WIDTH], float depth[HEIGHT][WIDTH], double time_seconds)
 {
 	clear_buffers(color, depth);
@@ -396,7 +408,7 @@ void render(uint32_t color[HEIGHT][WIDTH], float depth[HEIGHT][WIDTH], double ti
 
 	const Mat4 trans = Translate3D({0, 0, -10});
 	const Mat4 rotx = RotateX(0 * M_PI / 14.0);
-	const Mat4 roty = RotateX(2 * M_PI / 4.0);
+	const Mat4 roty = RotateY(5 * M_PI / 4.0);
 	const Mat4 transform = rotx * (trans * roty);
 
 	// std::cerr << "transform:\n"
@@ -454,7 +466,7 @@ void output_to_stdout(uint32_t color[HEIGHT][WIDTH])
 	{
 		for (int x = 0; x < WIDTH; x++)
 		{
-			uint32_t c = color_buffer1[y][x];
+			uint32_t c = color_buffer[y][x];
 			int r = (c & 0b111111110000000000000000) >> 16;
 			int g = (c & 0b1111111100000000) >> 8;
 			int b = (c & 0b11111111);
@@ -465,25 +477,30 @@ void output_to_stdout(uint32_t color[HEIGHT][WIDTH])
 	}
 }
 
+
+void bresenham(int x0, int y0, int x1, int y1, uint32_t color){
+
+}
+
 int main()
 {
 
-	clear_buffers(color_buffer1, depth_buffer1);
+	clear_buffers(color_buffer, depth_buffer1);
 
-	// // v1 = (161.93, 120, 0.116472), v2 = (78.0702, 120, 0.116472), v3 = (84, 170.912, 0.1)
-	// Vec3 v1 = {161.93, 120.0, 0.116472}; // mid
-	// Vec3 v2 = {78.0702, 120, 0.116472};	 // low
-	// Vec3 v3 = {84, 170.912, 0.1};		 // top
+	// v1 = (161.93, 120, 0.116472), v2 = (78.0702, 120, 0.116472), v3 = (84, 170.912, 0.1)
+	Vec3 v1 = {161.93, 120.0, 0.116472}; // mid
+	Vec3 v2 = {78.0702, 120, 0.116472};	 // low
+	Vec3 v3 = {84, 170.912, 0.1};		 // top
 
-	// std::cerr << "v1 = " << v1 << ", v2 = " << v2 << ", v3 = " << v3 << std::endl;
+	std::cerr << "v1 = " << v1 << ", v2 = " << v2 << ", v3 = " << v3 << std::endl;
 
-	// draw_tri_better(0, v1, v2, v3, 0xFFFF0000, color_buffer1, depth_buffer1);
-	// output_to_stdout(color_buffer1);
+	draw_tri_better(0, v1, v2, v3, 0xFFFF0000, color_buffer, depth_buffer1);
+	output_to_stdout(color_buffer);
 
-	// return 0;
-	// draw_tri_fast(v1, v2,v3, 0xFF0000FF, color_buffer1, depth_buffer1);
+	return 0;
+	// draw_tri_fast(v1, v2,v3, 0xFF0000FF, color_buffer, depth_buffer1);
 
-	const int runs = 1;
+	const int runs = 20;
 	std::cerr << "Rendering" << std::endl;
 	precalculate();
 	using namespace std::chrono;
@@ -492,7 +509,7 @@ int main()
 	float time = 0.0;
 	for (int i = 0; i < runs; i++)
 	{
-		render(color_buffer1, depth_buffer1, time);
+		render(color_buffer, depth_buffer1, time);
 	}
 
 	auto end = high_resolution_clock::now();
@@ -502,7 +519,7 @@ int main()
 
 	std::cerr << "Outputting" << std::endl;
 	std::cerr << "Checked: " << pixels_checked << ". Filled: " << pixels_filled << std::endl;
-	output_to_stdout(color_buffer1);
+	output_to_stdout(color_buffer);
 }
 /*
 	bool buffer1 = true;
@@ -510,7 +527,7 @@ int main()
 	{
 		if (buffer1)
 		{
-			render(color_buffer1, depth_buffer1);
+			render(color_buffer, depth_buffer1);
 		} else {
 			render(color_buffer2, depth_buffer2);
 		}
