@@ -15,7 +15,7 @@ const Vec3 light_dir = Vec3({1, 1, -1}).Normalize();
 const float fov = 3.0; // in no units in particular. higher is 'more zoomed in'
 const float near = 1.0;
 const float far = 100.0;
-const bool do_backface_culling = true;
+const bool do_backface_culling = false;
 const Vec3 view_dir_cam_space = Vec3(0, 0, -1.0);
 const bool DB = false;
 
@@ -165,6 +165,7 @@ void bresenham_step_shallow_left(int dx, int dy, bresenham_info &bh)
 void bresenham_step_shallow_right(int dx, int dy, bresenham_info &bh)
 {
 	int starty = bh.y;
+	int count = 0;
 	while (bh.y == starty && bh.x < WIDTH)
 	{
 		bh.x++;
@@ -177,6 +178,8 @@ void bresenham_step_shallow_right(int dx, int dy, bresenham_info &bh)
 			bh.p = bh.p + 2 * dy - 2 * dx;
 			bh.y++;
 		}
+		count++;
+		//std::cerr << "count " << count << std::endl;
 	}
 	while (bh.y == starty + 1 && bh.x < WIDTH)
 	{
@@ -260,14 +263,14 @@ bresenham_config make_line(Vec3 v0_pixels, Vec3 v1_pixels)
 	}
 }
 
-
-float lerp(float start, float end, float T){
+float lerp(float start, float end, float T)
+{
 	return T * start + (1 - T) * end;
 }
 
 void bresenhamTri(int i, Vec3 v1, Vec3 v2, Vec3 v3, uint32_t color, uint32_t color_buf[HEIGHT][WIDTH], float depth_buf[HEIGHT][WIDTH])
 {
-	// std::cerr << "v1 = " << v1 << ", v2 = " << v2 << ", v3 = " << v3 << std::endl;
+	//std::cerr << "v1 = " << v1 << ", v2 = " << v2 << ", v3 = " << v3 << std::endl;
 	//  top is higher on the screen (lower y value)
 	Vec3 top;
 	Vec3 mid;
@@ -340,6 +343,10 @@ void bresenhamTri(int i, Vec3 v1, Vec3 v2, Vec3 v3, uint32_t color, uint32_t col
 	int midy = (int)(midPixels.y + .5);
 	int maxy = (int)(lowPixels.y + .5);
 
+	int topx = (int)(topPixels.x + .5);
+	int midx = (int)(midPixels.x + .5);
+	int lowx = (int)(lowPixels.x + .5);
+
 	bresenham_config top2mid = make_line(topPixels, midPixels);
 	bresenham_config top2low = make_line(topPixels, lowPixels);
 	bresenham_config mid2low = make_line(midPixels, lowPixels);
@@ -366,29 +373,31 @@ void bresenhamTri(int i, Vec3 v1, Vec3 v2, Vec3 v3, uint32_t color, uint32_t col
 		bot_half_height = 0;
 	}
 
-	float short_side_inv_depth = topInvDepth;
-	float long_side_inv_depth = topInvDepth;
+	float short_side_span = (top2mid.dx * top2mid.dx + top2mid.dy * top2mid.dy);
+	float long_side_span = (top2low.dx * top2low.dx + top2low.dy * top2low.dy);
 
-	float short_side_inv_depth_per_y = (midInvDepth - topInvDepth) / (float)top_half_height;
-	float short_side2_inv_depth_per_y = (lowInvDepth - midInvDepth) / (float)bot_half_height;
-	float long_side_inv_depth_per_y = (lowInvDepth - topInvDepth) / (float)(top_half_height + bot_half_height);
-
-	// std::cerr << "Starting Part 1 " << i << std::endl;
+	//std::cerr << "Starting Part 1 " << i << std::endl;
 
 	while (top2low.info.y < midy && top_half_height > 0)
 	{
 		int width = abs(top2low.info.x - top2mid.info.x);
 		int direction = sign(top2low.info.x - top2mid.info.x);
 
-		float inv_depth_per_x = (long_side_inv_depth - short_side_inv_depth) / (float)width;
-		float inv_depth = short_side_inv_depth;
 		int y = top2low.info.y;
 		int x = top2mid.info.x;
+
+		float ssT = (x - topx) * (x - topx) + (y - miny) * (y - miny);
+		float lsT = (x - topx) * (x - topx) + (y - miny) * (y - miny);
+
+		float ss_inv_depth = lerp(topInvDepth, midInvDepth, ssT / short_side_span);
+		float ls_inv_depth = lerp(topInvDepth, lowInvDepth, lsT / long_side_span);
+
 		while (x != top2low.info.x + direction) // + direction for <= vibes rather than <
 		{
+			float inv_depth = lerp(ss_inv_depth, ls_inv_depth, direction * (x - top2low.info.x));
 			float depth = 1 / inv_depth;
-			// std::cerr << "(" << x << ", " << y << ")" << std::endl;
-			//  std::cerr << "top depth " << depth << std::endl;
+			// std::cerr << "diff depth " << depth - depth_buf[y][x] << std::endl;
+			// std::cerr << "top depth " << depth << std::endl;
 
 			if (depth > near && depth < far && depth < depth_buf[y][x])
 			{
@@ -397,32 +406,40 @@ void bresenhamTri(int i, Vec3 v1, Vec3 v2, Vec3 v3, uint32_t color, uint32_t col
 				depth_buf[y][x] = depth;
 			}
 
-			inv_depth += inv_depth_per_x;
 			x += direction;
 		}
 
 		top2low.stepY();
 		top2mid.stepY();
-		short_side_inv_depth += short_side_inv_depth_per_y;
-		long_side_inv_depth += long_side_inv_depth_per_y;
 	}
-	short_side_inv_depth = midInvDepth;
-	// std::cerr << "Starting Part 2" << std::endl;
-	while (top2low.info.y <= maxy && bot_half_height > 0)
+	//std::cerr << "Starting Part 2" << std::endl;
+	//color += 0x0000007F;
+
+	short_side_span = (mid2low.dx * mid2low.dx + mid2low.dy * mid2low.dy);
+
+	while (top2low.info.y < maxy  && bot_half_height > 0)
 	{
 		int width = abs(top2low.info.x - mid2low.info.x);
 		int direction = sign(top2low.info.x - mid2low.info.x);
 
-		float inv_depth_per_x = (long_side_inv_depth - short_side_inv_depth) / (float)width;
-		float inv_depth = short_side_inv_depth;
-
 		int y = top2low.info.y;
 		int x = mid2low.info.x;
-		while (x != top2low.info.x + direction) // + direction for <= vibes rather than <
+
+		float ssT = (x - midx) * (x - midx) + (y - midy) * (y - midy);
+		float lsT = (x - topx) * (x - topx) + (y - miny) * (y - miny);
+
+		float ss_inv_depth = lerp(midInvDepth, lowInvDepth, ssT / short_side_span);
+		float ls_inv_depth = lerp(topInvDepth, lowInvDepth, lsT / long_side_span);
+		//std::cerr << "sst = " << ssT / short_side_span << "lst = " << lsT / long_side_span << std::endl;
+
+		while (x != top2low.info.x) // + direction for <= vibes rather than <
 		{
+			float midT = (direction * (x - mid2low.info.x)) / width;
+			//std::cerr << "midT " << midT << " width = " << width << std::endl;
+			float inv_depth = lerp(ss_inv_depth, ls_inv_depth, midT);
 			float depth = 1 / inv_depth;
-			// std::cerr << "(" << x << ", " << y << ")" << std::endl;
-			// std::cerr << "bot depth " << depth << std::endl;
+			//std::cerr << "(" << x << ", " << y << ")" << std::endl;
+			//std::cerr << "bot depth " << depth << std::endl;
 			if (depth > near && depth < far && depth < depth_buf[y][x])
 			{
 				pixels_filled++;
@@ -430,14 +447,11 @@ void bresenhamTri(int i, Vec3 v1, Vec3 v2, Vec3 v3, uint32_t color, uint32_t col
 				depth_buf[y][x] = depth;
 			}
 
-			inv_depth += inv_depth_per_x;
 			x += direction;
 		}
 
 		top2low.stepY();
 		mid2low.stepY();
-		short_side_inv_depth += short_side2_inv_depth_per_y;
-		long_side_inv_depth += long_side_inv_depth_per_y;
 	}
 }
 
@@ -460,9 +474,8 @@ inline void fill_tri_trishaped(int i, Vec3 ov1, Vec3 ov2, Vec3 ov3, uint32_t col
 	const Vec3 dif = mat.diffuse.toVec3() * diff_contrib;
 	const uint32_t col = Vec3ToColor(amb + dif).toIntColor();
 
-	// std::cerr << "starting tri" << i << std::endl;
-	//bresenhamTri(i, ov1, ov2, ov3, col, color_buf, depth_buf);
-	
+	//std::cerr << "starting tri" << i << std::endl;
+	bresenhamTri(i, ov1, ov2, ov3, col, color_buf, depth_buf);
 }
 
 void precalculate()
@@ -500,7 +513,7 @@ void render(uint32_t color[HEIGHT][WIDTH], float depth[HEIGHT][WIDTH], float tim
 
 	const Mat4 trans = Translate3D({0, 0, -10});
 	const Mat4 rotx = RotateX(0 * M_PI / 14.0);
-	const Mat4 roty = RotateY(5 * M_PI / 4.0);
+	const Mat4 roty = RotateY(1 * M_PI / 4.0);
 	const Mat4 transform = rotx * (trans * roty);
 
 	for (int i = 0; i < num_points; i++)
@@ -534,16 +547,15 @@ void render(uint32_t color[HEIGHT][WIDTH], float depth[HEIGHT][WIDTH], float tim
 			if ((view_dir_cam_space.Dot(cam_space_normal) >= 0.1))
 			{
 				// backface cull this dude
+				std::cerr << "backface culling " << std::endl;
 				continue;
 			}
 		}
 
-		// fill_tri_tiled(i, v1, v2, v3); // 53ms
-		fill_tri(i, v1, v2, v3, color, depth);
-		//fill_tri_trishaped(i, v1, v2, v3, color, depth); // 40ms 30ms when inlined
-		//  fill_tri(i, v1, v2, v3, color, depth); // 40ms 30ms when inlined
-	//1679200
-	//2133700
+		 //fill_tri(i, v1, v2, v3, color, depth);
+		//std::cerr << "filling tri " << i << std::endl;
+		fill_tri_trishaped(i, v1, v2, v3, color, depth); // 40ms 30ms when inlined
+														 // fill_tri(i, v1, v2, v3, color, depth); // 40ms 30ms when inlined
 	}
 }
 
@@ -557,7 +569,7 @@ void output_to_stdout(uint32_t color[HEIGHT][WIDTH])
 	{
 		for (int x = 0; x < WIDTH; x++)
 		{
-			uint32_t c = color_buffer[y][x];
+			uint32_t c = color[y][x];
 			int r = (c & 0b111111110000000000000000) >> 16;
 			int g = (c & 0b1111111100000000) >> 8;
 			int b = (c & 0b11111111);
@@ -572,13 +584,15 @@ int main()
 {
 	// v1 = (0.3, 0.3, 0.1), v2 = (0.3, -0.3, 0.1), v3 = (-0.3, -0.3, 0.1)
 	// // v1 = (0.3, 0.3, 0.1), v2 = (0.3, -0.3, 0.1), v3 = (-0.3, -0.3, 0.1)
+	// v1 = (0.228273, 0.322827, 9.29289), v2 = (0.228273, -0.322827, 9.29289), v3 = (-0.198123, -0.280188, 10.7071)
+	// v1 = (0.228273, 0.322827, 9.29289), v2 = (-0.198123, -0.280188, 10.7071), v3 = (-0.198123, 0.280188, 10.7071)
 	// clear_buffers(color_buffer, depth_buffer);
-	// Vec3 v0 = {0.3, 0.3, 10};
-	// Vec3 v1 = {-.3, .3, 10};
-	// Vec3 v2 = {-.3, -.3, 10};
+	// Vec3 v0 = {0.228273, 0.322827, 9.29289};
+	// Vec3 v1 = {-0.198123, -0.280188, 10.7071};
+	// Vec3 v2 = {-0.198123, 0.280188, 10.7071};
 
-	// bresenhamTri(v0, v1, v2, 0xFFFF0000, color_buffer, depth_buffer);
-	// //fill_tri(1, v0, v1, v2, color_buffer, depth_buffer);
+	// bresenhamTri(0, v0, v1, v2, 0xFFFF0000, color_buffer, depth_buffer);
+	// // fill_tri(1, v0, v1, v2, color_buffer, depth_buffer);
 	// output_to_stdout(color_buffer);
 
 	// return 0;
