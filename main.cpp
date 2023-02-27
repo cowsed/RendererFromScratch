@@ -87,12 +87,12 @@ inline void fill_tri(int i, Vec3 v1, Vec3 v2, Vec3 v3, uint32_t color_buf[HEIGHT
 			const tri_info ti = insideTri(v1, v2, v3, PixelToNDC(x, y));
 			if (ti.inside)
 			{
-				pixels_filled++;
 
 				float depth = 1 / (ti.w1 * v1.z + ti.w2 * v2.z + ti.w3 * v3.z);
 
 				if (depth > near && depth < far && depth < depth_buf[y][x])
 				{
+					pixels_filled++;
 					color_buf[y][x] = Vec3ToColor(amb + dif).toIntColor(); // Vec3ToColor({fabs(world_normal.x), fabs(world_normal.y), fabs(world_normal.z)}); //
 					depth_buf[y][x] = depth;
 				}
@@ -260,6 +260,11 @@ bresenham_config make_line(Vec3 v0_pixels, Vec3 v1_pixels)
 	}
 }
 
+
+float lerp(float start, float end, float T){
+	return T * start + (1 - T) * end;
+}
+
 void bresenhamTri(int i, Vec3 v1, Vec3 v2, Vec3 v3, uint32_t color, uint32_t color_buf[HEIGHT][WIDTH], float depth_buf[HEIGHT][WIDTH])
 {
 	// std::cerr << "v1 = " << v1 << ", v2 = " << v2 << ", v3 = " << v3 << std::endl;
@@ -387,6 +392,7 @@ void bresenhamTri(int i, Vec3 v1, Vec3 v2, Vec3 v3, uint32_t color, uint32_t col
 
 			if (depth > near && depth < far && depth < depth_buf[y][x])
 			{
+				pixels_filled++;
 				color_buf[y][x] = color;
 				depth_buf[y][x] = depth;
 			}
@@ -419,6 +425,7 @@ void bresenhamTri(int i, Vec3 v1, Vec3 v2, Vec3 v3, uint32_t color, uint32_t col
 			// std::cerr << "bot depth " << depth << std::endl;
 			if (depth > near && depth < far && depth < depth_buf[y][x])
 			{
+				pixels_filled++;
 				color_buf[y][x] = color;
 				depth_buf[y][x] = depth;
 			}
@@ -454,7 +461,8 @@ inline void fill_tri_trishaped(int i, Vec3 ov1, Vec3 ov2, Vec3 ov3, uint32_t col
 	const uint32_t col = Vec3ToColor(amb + dif).toIntColor();
 
 	// std::cerr << "starting tri" << i << std::endl;
-	bresenhamTri(i, ov1, ov2, ov3, col, color_buf, depth_buf);
+	//bresenhamTri(i, ov1, ov2, ov3, col, color_buf, depth_buf);
+	
 }
 
 void precalculate()
@@ -531,9 +539,11 @@ void render(uint32_t color[HEIGHT][WIDTH], float depth[HEIGHT][WIDTH], float tim
 		}
 
 		// fill_tri_tiled(i, v1, v2, v3); // 53ms
-		//fill_tri(i, v1, v2, v3, color, depth);
-		fill_tri_trishaped(i, v1, v2, v3, color, depth); // 40ms 30ms when inlined
+		fill_tri(i, v1, v2, v3, color, depth);
+		//fill_tri_trishaped(i, v1, v2, v3, color, depth); // 40ms 30ms when inlined
 		//  fill_tri(i, v1, v2, v3, color, depth); // 40ms 30ms when inlined
+	//1679200
+	//2133700
 	}
 }
 
