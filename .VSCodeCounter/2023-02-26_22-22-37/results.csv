@@ -1,0 +1,13 @@
+"filename", "language", "C++", "Go", "Go Module File", "Go Checksum File", "comment", "blank", "total"
+"/home/richie/Programming/RendererFromScratch/Converter/go.mod", "Go Module File", 0, 0, 3, 0, 0, 3, 6
+"/home/richie/Programming/RendererFromScratch/Converter/go.sum", "Go Checksum File", 0, 0, 0, 9, 0, 1, 10
+"/home/richie/Programming/RendererFromScratch/Converter/main.go", "Go", 0, 159, 0, 0, 8, 28, 195
+"/home/richie/Programming/RendererFromScratch/Converter/out.h", "C++", 10, 0, 0, 0, 1, 1, 12
+"/home/richie/Programming/RendererFromScratch/cylinder.h", "C++", 10, 0, 0, 0, 1, 1, 12
+"/home/richie/Programming/RendererFromScratch/include/gfx.h", "C++", 71, 0, 0, 0, 8, 14, 93
+"/home/richie/Programming/RendererFromScratch/include/gfx_math.h", "C++", 65, 0, 0, 0, 0, 12, 77
+"/home/richie/Programming/RendererFromScratch/main.cpp", "C++", 556, 0, 0, 0, 46, 89, 691
+"/home/richie/Programming/RendererFromScratch/model.h", "C++", 10, 0, 0, 0, 1, 1, 12
+"/home/richie/Programming/RendererFromScratch/src/gfx.cpp", "C++", 27, 0, 0, 0, 0, 13, 40
+"/home/richie/Programming/RendererFromScratch/src/gfx_math.cpp", "C++", 193, 0, 0, 0, 10, 27, 230
+"Total", "-", 942, 159, 3, 9, 75, 190, 1378
