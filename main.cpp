@@ -55,7 +55,6 @@ int pixels_filled = 0;
 
 inline void fill_tri(int i, Vec3 v1, Vec3 v2, Vec3 v3, uint32_t color_buf[HEIGHT][WIDTH], float depth_buf[HEIGHT][WIDTH])
 {
-	std::cerr << "v1 = " << v1 << ", v2 = " << v2 << ", v3 = " << v3 << std::endl;
 	// pre-compute 1 over z
 	v1.z = 1 / v1.z;
 	v2.z = 1 / v2.z;
@@ -110,256 +109,6 @@ int sign(int a)
 	}
 	return 1;
 }
-void draw_tri_better(int i, Vec3 ov1, Vec3 ov2, Vec3 ov3, uint32_t color, uint32_t color_buf[HEIGHT][WIDTH], float depth_buf[HEIGHT][WIDTH])
-{
-	// init
-	// top is higher on the screen
-	Vec3 top;
-	Vec3 mid;
-	Vec3 low;
-
-	// original vector less than other vector
-	bool ov1_lt_ov2 = ov1.y <= ov2.y;
-	bool ov1_lt_ov3 = ov1.y <= ov3.y;
-	bool ov2_lt_ov1 = ov2.y <= ov1.y;
-	bool ov2_lt_ov3 = ov2.y <= ov3.y;
-	bool ov3_lt_ov1 = ov3.y <= ov1.y;
-	bool ov3_lt_ov2 = ov3.y <= ov2.y;
-
-	// cursed if tree
-	if (ov1_lt_ov2 && ov1_lt_ov3)
-	{
-		top = ov1;
-		if (ov2_lt_ov3)
-		{
-			mid = ov2;
-			low = ov3;
-		}
-		else
-		{
-			mid = ov3;
-			low = ov2;
-		}
-	}
-	else if (ov2_lt_ov1 && ov2_lt_ov3)
-	{
-
-		top = ov2;
-		if (ov1_lt_ov3)
-		{
-			mid = ov1;
-			low = ov3;
-		}
-		else
-		{
-			mid = ov3;
-			low = ov1;
-		}
-	}
-	else
-	{
-		top = ov3;
-		if (ov1_lt_ov2)
-		{
-			mid = ov1;
-			low = ov2;
-		}
-		else
-		{
-			mid = ov2;
-			low = ov1;
-		}
-	}
-
-	int miny = (int)(top.y + .5);
-	int midy = (int)(mid.y + .5);
-	int maxy = (int)(low.y + .5);
-
-	Vec3 top2mid = (mid - top);
-	Vec3 top2low = (low - top);
-	Vec3 mid2low = (mid - low);
-
-	float short_side_dx = top2mid.x / top2mid.y;
-	float long_side_dx = top2low.x / top2low.y;
-
-	Vec3 short_side_pos = top;
-	Vec3 long_side_pos = top;
-
-	for (int y = max(0, miny - 1); y <= min(HEIGHT, maxy); y++)
-	{
-		// switch direction when we pass midy
-		if (y == midy)
-		{
-			short_side_dx = mid2low.x / mid2low.y;
-			short_side_pos = mid;
-		}
-		int short_side_index = (int)(short_side_pos.x + .5);
-		int long_side_index = (int)(long_side_pos.x + .5);
-		int direction = sign(long_side_index - short_side_index);
-		short_side_index -= direction; // extra padding to avoid off by one errors
-		long_side_index += direction;  // extra padding to avoid off by one errors
-		short_side_index = clamp(short_side_index, 0, WIDTH);
-		long_side_index = clamp(long_side_index, 0, WIDTH);
-
-		direction = sign(long_side_index - short_side_index); // necessary sometimes cuz direction can get mess up ? todo figure out why this happens
-
-		int x = short_side_index;
-		while (x != long_side_index + direction && x < WIDTH && x > 0) // + direction to do <= typa thing
-		{
-			Vec3 fov1 = PixelToNDC3(ov1.x, ov1.y, ov1.z);
-			Vec3 fov2 = PixelToNDC3(ov2.x, ov2.y, ov2.z);
-			Vec3 fov3 = PixelToNDC3(ov3.x, ov3.y, ov3.z);
-			const tri_info ti = insideTri(fov1, fov2, fov3, PixelToNDC(x, y));
-			float depth = 1 / (ti.w1 * ov1.z + ti.w2 * ov2.z + ti.w3 * ov3.z);
-			if (ti.inside)
-			{
-				pixels_filled++;
-				if ((depth > near) && (depth < far) && (depth < depth_buf[y][x]))
-				{
-					color_buf[y][x] = color; // color;
-					depth_buf[y][x] = depth;
-				}
-			}
-			x += direction;
-		}
-
-		short_side_pos.x += short_side_dx;
-		short_side_pos.y += 1;
-		long_side_pos.x += long_side_dx;
-		long_side_pos.y += 1;
-	}
-	// std::cerr << "ssp: " << short_side_pos << " lsp: " << long_side_pos << std::endl;
-}
-
-inline void fill_tri_trishaped(int i, Vec3 ov1, Vec3 ov2, Vec3 ov3, uint32_t color_buf[HEIGHT][WIDTH], float depth_buf[HEIGHT][WIDTH])
-{
-
-	// pre-compute 1 over z
-	ov1.z = 1 / ov1.z;
-	ov2.z = 1 / ov2.z;
-	ov3.z = 1 / ov3.z;
-
-	// We don't interpolate vertex attributes, we're filling only one tri at a time -> all this stuff is constant
-	const Vec3 world_normal = normals[i];
-	const float amt = world_normal.Dot(light_dir);
-
-	const Material mat = materials[faces[i].matID];
-	const float diff_contrib = amt * (1.0 - ambient_contrib);
-
-	const Vec3 amb = mat.diffuse.toVec3() * ambient_contrib; //{mat.diffuse.r * ambient_contrib, mat.diffuse.g * ambient_contrib, mat.diffuse.b * ambient_contrib};
-	const Vec3 dif = mat.diffuse.toVec3() * diff_contrib;
-	const uint32_t col = Vec3ToColor(amb + dif).toIntColor();
-
-	ov1 = NDCtoPixels3(ov1);
-	ov2 = NDCtoPixels3(ov2);
-	ov3 = NDCtoPixels3(ov3);
-
-	draw_tri_better(i, ov1, ov2, ov3, col, color_buf, depth_buf);
-}
-
-void precalculate()
-{
-	// Precalculate world normals
-	for (int i = 0; i < num_faces; i++)
-	{
-		Tri t = faces[i];
-		Vec3 world_normal = TriNormal(points[t.v1_index], points[t.v2_index], points[t.v3_index]).Normalize(); // normals[i]; //
-		normals[i] = world_normal;
-	}
-}
-
-void clear_buffers(uint32_t color[HEIGHT][WIDTH], float depth[HEIGHT][WIDTH])
-{
-	// Clear all pixels
-	for (int y = 0; y < HEIGHT; y++)
-	{
-		for (int x = 0; x < WIDTH; x++)
-		{
-			color[y][x] = clear_color.toIntColor();
-			depth[y][x] = far + 1;
-		}
-	}
-}
-
-void render(uint32_t color[HEIGHT][WIDTH], float depth[HEIGHT][WIDTH], float time_seconds)
-{
-	clear_buffers(color, depth);
-
-	// Project all the points to screen space
-	Vec3 projected_points[num_points];
-	Vec3 cam_projected_points[num_points];
-	float aspect = width / height;
-
-	const Mat4 trans = Translate3D({0, 0, -10});
-	const Mat4 rotx = RotateX(0 * M_PI / 14.0);
-	const Mat4 roty = RotateY(0 * M_PI / 4.0);
-	const Mat4 transform = rotx * (trans * roty);
-
-	// std::cerr << "transform:\n"
-	// 		  << transform << std::endl;
-
-	for (int i = 0; i < num_points; i++)
-	{
-		Vec4 p = points[i].toVec4(1.0);
-		// transform p to camera space
-
-		Vec4 p_cam = transform.Mul4xV4(p); //(p.toVec3().RotateY(5 * M_PI / 4) - Vec3(0, 2.5, 10)).RotateZ(M_PI / 16).toVec4(1.0); // transform from world space to camera space
-		cam_projected_points[i] = p_cam.toVec3();
-
-		// divide by depth. things farther away are smaller
-		Vec4 p_NDC = {fov * near * p_cam.x / -p_cam.z, fov * near * p_cam.y / -p_cam.z, -p_cam.z};
-
-		// negate Y (+1 is up in graphics, +1 is down in image)
-		//  do correction for aspect ratio
-		Vec3 p_screen = {p_NDC.x, -p_NDC.y * aspect, p_NDC.z};
-		projected_points[i] = p_screen;
-	}
-
-	// Assemble triangles and color they pixels
-	for (int i = 0; i < num_faces; i++)
-	{
-		const Tri t = faces[i];
-		const Vec3 v1 = projected_points[t.v1_index];
-		const Vec3 v2 = projected_points[t.v2_index];
-		const Vec3 v3 = projected_points[t.v3_index];
-
-		if (do_backface_culling)
-		{
-			Vec3 cam_space_normal = TriNormal(cam_projected_points[t.v1_index], cam_projected_points[t.v2_index], cam_projected_points[t.v3_index]);
-			if ((view_dir_cam_space.Dot(cam_space_normal) >= 0.1))
-			{
-				// backface cull this dude
-				continue;
-			}
-		}
-
-		// fill_tri_tiled(i, v1, v2, v3); // 53ms
-		fill_tri(i, v1, v2, v3, color, depth);
-		// fill_tri_trishaped(i, v1, v2, v3, color, depth); // 40ms 30ms when inlined
-		//    fill_tri(i, v1, v2, v3, color, depth); // 40ms 30ms when inlined
-	}
-}
-
-void output_to_stdout(uint32_t color[HEIGHT][WIDTH])
-{
-	std::cout << "P3" << std::endl;
-	std::cout << WIDTH << " " << HEIGHT << std::endl;
-	std::cout << "255" << std::endl;
-
-	for (int y = 0; y < HEIGHT; y++)
-	{
-		for (int x = 0; x < WIDTH; x++)
-		{
-			uint32_t c = color_buffer[y][x];
-			int r = (c & 0b111111110000000000000000) >> 16;
-			int g = (c & 0b1111111100000000) >> 8;
-			int b = (c & 0b11111111);
-
-			std::cout << r << " " << g << " " << b << " ";
-		}
-		std::cout << "\n";
-	}
-}
 
 struct bresenham_info
 {
@@ -386,7 +135,7 @@ void bresenham_step_steep_left(int dx, int dy, bresenham_info &bh)
 void bresenham_step_shallow_left(int dx, int dy, bresenham_info &bh)
 {
 	int starty = bh.y;
-	while (bh.y == starty)
+	while (bh.y == starty && bh.x > 0)
 	{
 		bh.x--;
 		if (bh.p < 0)
@@ -399,7 +148,7 @@ void bresenham_step_shallow_left(int dx, int dy, bresenham_info &bh)
 			bh.y++;
 		}
 	}
-	while (bh.y == starty + 1)
+	while (bh.y == starty + 1 && bh.x > 0)
 	{
 		bh.x--;
 		if (bh.p < 0)
@@ -416,7 +165,7 @@ void bresenham_step_shallow_left(int dx, int dy, bresenham_info &bh)
 void bresenham_step_shallow_right(int dx, int dy, bresenham_info &bh)
 {
 	int starty = bh.y;
-	while (bh.y == starty)
+	while (bh.y == starty && bh.x < WIDTH)
 	{
 		bh.x++;
 		if (bh.p < 0)
@@ -429,7 +178,7 @@ void bresenham_step_shallow_right(int dx, int dy, bresenham_info &bh)
 			bh.y++;
 		}
 	}
-	while (bh.y == starty + 1)
+	while (bh.y == starty + 1 && bh.x < WIDTH)
 	{
 		bh.x++;
 		if (bh.p < 0)
@@ -495,29 +244,26 @@ bresenham_config make_line(Vec3 v0_pixels, Vec3 v1_pixels)
 
 	if (!left && !shallow)
 	{
-		std::cerr << "right steep" << std::endl;
 		return {.dx = dx, .dy = dy, .info = {.x = x0, .y = y0, .p = 2 * dx - dy}, .step_func = bresenham_step_steep_right};
 	}
 	else if (left && !shallow)
 	{
-		std::cerr << "left steep" << std::endl;
 		return {.dx = dx, .dy = dy, .info = {.x = x0, .y = y0, .p = 2 * -dx - dy}, .step_func = bresenham_step_steep_left};
 	}
 	else if (!left && shallow)
 	{
-		std::cerr << "right shallow" << std::endl;
 		return {.dx = dx, .dy = dy, .info = {.x = x0, .y = y0, .p = 2 * dy - dx}, .step_func = bresenham_step_shallow_right};
 	}
 	else
 	{ // left shallow
-		std::cerr << "left shallow" << std::endl;
 		return {.dx = dx, .dy = dy, .info = {.x = x0, .y = y0, .p = 2 * dy + dx}, .step_func = bresenham_step_shallow_left};
 	}
 }
 
-void bresenhamTri(Vec3 v1, Vec3 v2, Vec3 v3, uint32_t color, uint32_t color_buf[HEIGHT][WIDTH], float depth_buf[HEIGHT][WIDTH])
+void bresenhamTri(int i, Vec3 v1, Vec3 v2, Vec3 v3, uint32_t color, uint32_t color_buf[HEIGHT][WIDTH], float depth_buf[HEIGHT][WIDTH])
 {
-	// top is higher on the screen (lower y value)
+	// std::cerr << "v1 = " << v1 << ", v2 = " << v2 << ", v3 = " << v3 << std::endl;
+	//  top is higher on the screen (lower y value)
 	Vec3 top;
 	Vec3 mid;
 	Vec3 low;
@@ -583,39 +329,48 @@ void bresenhamTri(Vec3 v1, Vec3 v2, Vec3 v3, uint32_t color, uint32_t color_buf[
 	Vec3 midPixels = NDCtoPixels3(mid);
 	Vec3 lowPixels = NDCtoPixels3(low);
 
-	std::cerr << "v1 = " << v1 << ", v2 = " << v2 << ", v3 = " << v3 << std::endl;
-	std::cerr << "top = " << top << ", mid = " << mid << ", low = " << low << std::endl;
-	std::cerr << "topP = " << topPixels << ", midP = " << midPixels << ", lowP = " << lowPixels << std::endl;
+	// std::cerr << "topP = " << topPixels << ", midP = " << midPixels << ", lowP = " << lowPixels << std::endl;
 
 	int miny = (int)(topPixels.y + .5);
 	int midy = (int)(midPixels.y + .5);
 	int maxy = (int)(lowPixels.y + .5);
 
-	std::cerr << "top2mid" << std::endl;
 	bresenham_config top2mid = make_line(topPixels, midPixels);
-	std::cerr << "top2low" << std::endl;
 	bresenham_config top2low = make_line(topPixels, lowPixels);
-	std::cerr << "mid2low" << std::endl;
 	bresenham_config mid2low = make_line(midPixels, lowPixels);
-
-	std::cerr << "miny = " << miny << ", midy = " << midy << ", maxy = " << maxy << std::endl;
 
 	// take the inverse so that the linear interpolation below can do perspective correct interpolation
 	float topInvDepth = 1 / top.z;
 	float midInvDepth = 1 / mid.z;
 	float lowInvDepth = 1 / low.z;
 
-	int firstY = midy - miny;
-	int secondY = maxy - midy + 1;
+	int top_half_height = midy - miny;
+	int bot_half_height = maxy - midy + 1;
+
+	if (bot_half_height == 1)
+	{
+		if (top_half_height == 0)
+		{
+			// there are no pixels we can draw here
+			return;
+		}
+		// no need to do all the work for one more row that will be the same (also second half breaks sometimes)
+
+		top_half_height += 1;
+		midy++;
+		bot_half_height = 0;
+	}
 
 	float short_side_inv_depth = topInvDepth;
 	float long_side_inv_depth = topInvDepth;
 
-	float short_side_inv_depth_per_y = (midInvDepth - topInvDepth) / (float)firstY;
-	float short_side2_inv_depth_per_y = (lowInvDepth - midInvDepth) / (float)secondY;
-	float long_side_inv_depth_per_y = (lowInvDepth - topInvDepth) / (float)(firstY + secondY);
+	float short_side_inv_depth_per_y = (midInvDepth - topInvDepth) / (float)top_half_height;
+	float short_side2_inv_depth_per_y = (lowInvDepth - midInvDepth) / (float)bot_half_height;
+	float long_side_inv_depth_per_y = (lowInvDepth - topInvDepth) / (float)(top_half_height + bot_half_height);
 
-	while (top2low.info.y < midy)
+	// std::cerr << "Starting Part 1 " << i << std::endl;
+
+	while (top2low.info.y < midy && top_half_height > 0)
 	{
 		int width = abs(top2low.info.x - top2mid.info.x);
 		int direction = sign(top2low.info.x - top2mid.info.x);
@@ -627,22 +382,27 @@ void bresenhamTri(Vec3 v1, Vec3 v2, Vec3 v3, uint32_t color, uint32_t color_buf[
 		while (x != top2low.info.x + direction) // + direction for <= vibes rather than <
 		{
 			float depth = 1 / inv_depth;
-			
+			// std::cerr << "(" << x << ", " << y << ")" << std::endl;
+			//  std::cerr << "top depth " << depth << std::endl;
+
 			if (depth > near && depth < far && depth < depth_buf[y][x])
 			{
 				color_buf[y][x] = color;
 				depth_buf[y][x] = depth;
 			}
+
 			inv_depth += inv_depth_per_x;
 			x += direction;
 		}
+
 		top2low.stepY();
 		top2mid.stepY();
 		short_side_inv_depth += short_side_inv_depth_per_y;
 		long_side_inv_depth += long_side_inv_depth_per_y;
 	}
 	short_side_inv_depth = midInvDepth;
-	while (top2low.info.y <= maxy)
+	// std::cerr << "Starting Part 2" << std::endl;
+	while (top2low.info.y <= maxy && bot_half_height > 0)
 	{
 		int width = abs(top2low.info.x - mid2low.info.x);
 		int direction = sign(top2low.info.x - mid2low.info.x);
@@ -655,6 +415,8 @@ void bresenhamTri(Vec3 v1, Vec3 v2, Vec3 v3, uint32_t color, uint32_t color_buf[
 		while (x != top2low.info.x + direction) // + direction for <= vibes rather than <
 		{
 			float depth = 1 / inv_depth;
+			// std::cerr << "(" << x << ", " << y << ")" << std::endl;
+			// std::cerr << "bot depth " << depth << std::endl;
 			if (depth > near && depth < far && depth < depth_buf[y][x])
 			{
 				color_buf[y][x] = color;
@@ -672,35 +434,146 @@ void bresenhamTri(Vec3 v1, Vec3 v2, Vec3 v3, uint32_t color, uint32_t color_buf[
 	}
 }
 
+inline void fill_tri_trishaped(int i, Vec3 ov1, Vec3 ov2, Vec3 ov3, uint32_t color_buf[HEIGHT][WIDTH], float depth_buf[HEIGHT][WIDTH])
+{
+
+	// pre-compute 1 over z
+	// ov1.z = 1 / ov1.z;
+	// ov2.z = 1 / ov2.z;
+	// ov3.z = 1 / ov3.z;
+
+	// We don't interpolate vertex attributes, we're filling only one tri at a time -> all this stuff is constant
+	const Vec3 world_normal = normals[i];
+	const float amt = world_normal.Dot(light_dir);
+
+	const Material mat = materials[faces[i].matID];
+	const float diff_contrib = amt * (1.0 - ambient_contrib);
+
+	const Vec3 amb = mat.diffuse.toVec3() * ambient_contrib; //{mat.diffuse.r * ambient_contrib, mat.diffuse.g * ambient_contrib, mat.diffuse.b * ambient_contrib};
+	const Vec3 dif = mat.diffuse.toVec3() * diff_contrib;
+	const uint32_t col = Vec3ToColor(amb + dif).toIntColor();
+
+	// std::cerr << "starting tri" << i << std::endl;
+	bresenhamTri(i, ov1, ov2, ov3, col, color_buf, depth_buf);
+}
+
+void precalculate()
+{
+	// Precalculate world normals
+	for (int i = 0; i < num_faces; i++)
+	{
+		Tri t = faces[i];
+		Vec3 world_normal = TriNormal(points[t.v1_index], points[t.v2_index], points[t.v3_index]).Normalize(); // normals[i]; //
+		normals[i] = world_normal;
+	}
+}
+
+void clear_buffers(uint32_t color[HEIGHT][WIDTH], float depth[HEIGHT][WIDTH])
+{
+	// Clear all pixels
+	for (int y = 0; y < HEIGHT; y++)
+	{
+		for (int x = 0; x < WIDTH; x++)
+		{
+			color[y][x] = clear_color.toIntColor();
+			depth[y][x] = far + 1;
+		}
+	}
+}
+
+void render(uint32_t color[HEIGHT][WIDTH], float depth[HEIGHT][WIDTH], float time_seconds)
+{
+	clear_buffers(color, depth);
+
+	// Project all the points to screen space
+	Vec3 projected_points[num_points];
+	Vec3 cam_projected_points[num_points];
+	float aspect = width / height;
+
+	const Mat4 trans = Translate3D({0, 0, -10});
+	const Mat4 rotx = RotateX(0 * M_PI / 14.0);
+	const Mat4 roty = RotateY(5 * M_PI / 4.0);
+	const Mat4 transform = rotx * (trans * roty);
+
+	for (int i = 0; i < num_points; i++)
+	{
+		Vec4 p = points[i].toVec4(1.0);
+		// transform p to camera space
+
+		Vec4 p_cam = transform.Mul4xV4(p); //(p.toVec3().RotateY(5 * M_PI / 4) - Vec3(0, 2.5, 10)).RotateZ(M_PI / 16).toVec4(1.0); // transform from world space to camera space
+		cam_projected_points[i] = p_cam.toVec3();
+
+		// divide by depth. things farther away are smaller
+		Vec4 p_NDC = {fov * near * p_cam.x / -p_cam.z, fov * near * p_cam.y / -p_cam.z, -p_cam.z};
+
+		// negate Y (+1 is up in graphics, +1 is down in image)
+		//  do correction for aspect ratio
+		Vec3 p_screen = {p_NDC.x, -p_NDC.y * aspect, p_NDC.z};
+		projected_points[i] = p_screen;
+	}
+
+	// Assemble triangles and color they pixels
+	for (int i = 0; i < num_faces; i++)
+	{
+		const Tri t = faces[i];
+		const Vec3 v1 = projected_points[t.v1_index];
+		const Vec3 v2 = projected_points[t.v2_index];
+		const Vec3 v3 = projected_points[t.v3_index];
+
+		if (do_backface_culling)
+		{
+			Vec3 cam_space_normal = TriNormal(cam_projected_points[t.v1_index], cam_projected_points[t.v2_index], cam_projected_points[t.v3_index]);
+			if ((view_dir_cam_space.Dot(cam_space_normal) >= 0.1))
+			{
+				// backface cull this dude
+				continue;
+			}
+		}
+
+		// fill_tri_tiled(i, v1, v2, v3); // 53ms
+		//fill_tri(i, v1, v2, v3, color, depth);
+		fill_tri_trishaped(i, v1, v2, v3, color, depth); // 40ms 30ms when inlined
+		//  fill_tri(i, v1, v2, v3, color, depth); // 40ms 30ms when inlined
+	}
+}
+
+void output_to_stdout(uint32_t color[HEIGHT][WIDTH])
+{
+	std::cout << "P3" << std::endl;
+	std::cout << WIDTH << " " << HEIGHT << std::endl;
+	std::cout << "255" << std::endl;
+
+	for (int y = 0; y < HEIGHT; y++)
+	{
+		for (int x = 0; x < WIDTH; x++)
+		{
+			uint32_t c = color_buffer[y][x];
+			int r = (c & 0b111111110000000000000000) >> 16;
+			int g = (c & 0b1111111100000000) >> 8;
+			int b = (c & 0b11111111);
+
+			std::cout << r << " " << g << " " << b << " ";
+		}
+		std::cout << "\n";
+	}
+}
+
 int main()
 {
-	clear_buffers(color_buffer, depth_buffer);
-	Vec3 v0 = {-.25, -.25, 1};
-	Vec3 v1 = {.25, -.125, 2};
-	Vec3 v2 = {0, .75, 2.5};
-
-	bresenhamTri(v0, v1, v2, 0xFFFF0000, color_buffer, depth_buffer);
-	fill_tri(1, v0, v1, v2, color_buffer, depth_buffer);
-	output_to_stdout(color_buffer);
-
-	return 0;
+	// v1 = (0.3, 0.3, 0.1), v2 = (0.3, -0.3, 0.1), v3 = (-0.3, -0.3, 0.1)
+	// // v1 = (0.3, 0.3, 0.1), v2 = (0.3, -0.3, 0.1), v3 = (-0.3, -0.3, 0.1)
 	// clear_buffers(color_buffer, depth_buffer);
-	// v1 = (0.3, 0.3, 10), v2 = (-0.3, -0.3, 10), v3 = (-0.3, 0.3, 10)
-	// v1 = (0.3, 0.3, 10), v2 = (0.3, -0.3, 10), v3 = (-0.3, -0.3, 10)
+	// Vec3 v0 = {0.3, 0.3, 10};
+	// Vec3 v1 = {-.3, .3, 10};
+	// Vec3 v2 = {-.3, -.3, 10};
 
-	//  Vec3 v1 = {161.93, 120.0, 0.116472}; // mid
-	//  Vec3 v2 = {78.0702, 120, 0.116472};	 // low
-	//  Vec3 v3 = {84, 170.912, 0.1};		 // top
-
-	// std::cerr << "v1 = " << v1 << ", v2 = " << v2 << ", v3 = " << v3 << std::endl;
-
-	// draw_tri_better(0, v1, v2, v3, 0xFFFF0000, color_buffer, depth_buffer);
+	// bresenhamTri(v0, v1, v2, 0xFFFF0000, color_buffer, depth_buffer);
+	// //fill_tri(1, v0, v1, v2, color_buffer, depth_buffer);
 	// output_to_stdout(color_buffer);
 
 	// return 0;
-	// draw_tri_fast(v1, v2,v3, 0xFF0000FF, color_buffer, depth_buffer);
 
-	const int runs = 1;
+	const int runs = 100;
 	std::cerr << "Rendering" << std::endl;
 	precalculate();
 	using namespace std::chrono;
